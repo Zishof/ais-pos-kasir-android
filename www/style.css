@@ -82,6 +82,11 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 
 /* ==== Shell utama ==== */
 #layarPos { flex-direction: column; }
+.upd-banner { flex-shrink: 0; display: none; align-items: center; gap: 10px; padding: 9px 14px; padding-top: calc(9px + var(--safe-top)); background: var(--primary); color: #fff; font-size: 12px; }
+.upd-banner .teks { flex: 1; font-weight: 700; }
+.upd-banner button { flex-shrink: 0; border: none; border-radius: 8px; padding: 6px 12px; font-size: 11.5px; font-weight: 800; cursor: pointer; }
+.upd-banner .btn-lihat { background: #fff; color: var(--primary); }
+.upd-banner .btn-nanti { background: rgba(255,255,255,.22); color: #fff; }
 .topbar { flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 10px 14px; padding-top: calc(10px + var(--safe-top)); background: var(--surface); border-bottom: 1px solid var(--border); }
 .topbar .brand { font-weight: 800; font-size: 14.5px; flex-shrink: 0; }
 .topbar .toko { font-size: 11px; color: var(--muted); }

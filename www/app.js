@@ -632,6 +632,7 @@
             tutupMuat();
         }
         setInterval(segarkanStatus, 30000);
+        if (window.AisUpdater) window.AisUpdater.cekUpdate();
     }
 
     (async function start() {

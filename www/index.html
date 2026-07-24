@@ -50,6 +50,11 @@
 
 <!-- ==== Layar Kasir Utama ==== -->
 <div class="layar" id="layarPos">
+    <div class="upd-banner" id="updBanner" style="display:none;">
+        <span class="teks" id="updBannerTeks"></span>
+        <button type="button" class="btn-lihat" id="updBtnLihat">Lihat</button>
+        <button type="button" class="btn-nanti" id="updBtnNanti">Nanti</button>
+    </div>
     <div class="topbar">
         <div>
             <div class="brand">AIS POS Kasir</div>
@@ -144,6 +149,7 @@
 <div class="toast" id="toast"></div>
 
 <script src="error-alert.js"></script>
+<script src="updater.js"></script>
 <script src="escpos.js"></script>
 <script src="api.js"></script>
 <script src="app.js"></script>
