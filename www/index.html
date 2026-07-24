@@ -61,7 +61,9 @@
             <div class="toko" id="txtNamaToko">-</div>
         </div>
         <div class="spacer"></div>
+        <button type="button" class="pill-kas" id="pillKas" style="display:none;" title="Tutup Kas">&#128176; <span id="txtKasSingkat">-</span></button>
         <span class="pill-status offline" id="pillStatus"><span class="dot"></span><span id="txtStatus">Memeriksa...</span></span>
+        <button class="btn-ikon" id="btnMember" title="Pilih Member">&#128100;</button>
         <button class="btn-ikon" id="btnPrinter" title="Printer Bluetooth">&#128424;&#65039;</button>
         <button class="btn-ikon" id="btnKeluar" title="Keluar">&#8630;</button>
     </div>
@@ -81,6 +83,19 @@
                 <button class="btn-ikon" id="btnTutupKeranjang" style="display:none;">&#10005;</button>
             </div>
             <div class="keranjang-list" id="keranjangList"></div>
+            <button type="button" class="member-pilih-btn" id="btnPilihMember">&#128100; Pilih member (opsional, wajib utk bayar Saldo)...</button>
+            <div class="member-chip" id="memberChip" style="display:none;">
+                <div class="info">
+                    <div class="nama" id="memberChipNama"></div>
+                    <div class="saldo" id="memberChipSaldo"></div>
+                </div>
+                <button type="button" class="btn-isi-saldo" id="btnIsiSaldo" style="display:none;">&#128176; Isi Saldo</button>
+                <button type="button" class="btn-hapus-member" id="btnHapusMember" title="Batalkan pilihan member">&#10005;</button>
+            </div>
+            <div class="form-topup" id="formTopup" style="display:none;">
+                <input type="number" id="inNominalTopup" placeholder="Nominal top up (Rp)">
+                <button type="button" class="btn-utama" id="btnSubmitTopup">Isi Saldo</button>
+            </div>
             <div class="keranjang-footer">
                 <div class="baris-total"><span>Subtotal</span><span id="txtSubtotal">Rp 0</span></div>
                 <div class="baris-total grand"><span>Total</span><span id="txtTotal">Rp 0</span></div>
@@ -101,6 +116,49 @@
             <p style="font-size:12.5px;color:var(--muted);margin-top:0;">Sesi kas toko ini belum dibuka. Isi modal awal untuk mulai berjualan.</p>
             <div class="field"><label>Modal Awal (Rp)</label><input type="number" id="inModalAwal" value="0"></div>
             <button class="btn-utama" id="btnSubmitBukaKas">Buka Kas &amp; Mulai</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Sesi Kas (tutup) ==== -->
+<div class="overlay" id="overlayTutupKas">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Tutup Kas</h3><button class="modal-tutup" id="btnTutupTutupKas">&#10005;</button></div>
+        <div class="modal-isi">
+            <div class="ringkas-kas">
+                <div class="baris"><span>Modal Awal</span><span id="tkModalAwal">Rp 0</span></div>
+                <div class="baris"><span>Penjualan Tunai</span><span id="tkTunai">Rp 0</span></div>
+                <div class="baris"><span>Penjualan Non-Tunai</span><span id="tkNonTunai">Rp 0</span></div>
+                <div class="baris grand"><span>Kas Seharusnya</span><span id="tkSeharusnya">Rp 0</span></div>
+            </div>
+            <div class="field"><label>Uang Fisik Dihitung (Rp)</label><input type="number" id="inUangFisik"></div>
+            <div class="field"><label>Keterangan (opsional)</label><input type="text" id="inKetTutupKas"></div>
+            <button class="btn-utama" id="btnSubmitTutupKas">Tutup Kas</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Pilih Member ==== -->
+<div class="overlay" id="overlayMember">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Pilih Member</h3><button class="modal-tutup" id="btnTutupMember">&#10005;</button></div>
+        <div class="modal-isi">
+            <input type="text" id="inCariMember" placeholder="Cari nama/kode member..." style="margin-bottom:10px;">
+            <div id="daftarMember"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Verifikasi PIN Member ==== -->
+<div class="overlay" id="overlayPin">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Verifikasi PIN</h3></div>
+        <div class="modal-isi">
+            <p style="font-size:12.5px;color:var(--muted);margin-top:0;" id="pinKeterangan"></p>
+            <input type="password" id="inPin" inputmode="numeric" placeholder="Masukkan PIN" style="margin-bottom:6px;">
+            <p class="pesan-error" id="pinError"></p>
+            <button class="btn-utama" id="btnSubmitPin" style="margin-bottom:8px;">Verifikasi</button>
+            <button class="btn-teks" id="btnBatalPin">Batal</button>
         </div>
     </div>
 </div>

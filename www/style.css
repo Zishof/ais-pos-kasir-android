@@ -95,6 +95,7 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .pill-status.online { background: var(--success-50); color: var(--success); }
 .pill-status.offline { background: var(--danger-50); color: var(--danger); }
 .pill-status .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.pill-kas { font-size: 10.5px; font-weight: 800; padding: 5px 10px; border-radius: 999px; border: none; cursor: pointer; background: var(--warning-50); color: var(--warning); flex-shrink: 0; }
 .btn-ikon { width: 34px; height: 34px; border-radius: 9px; border: 1.5px solid var(--border); background: var(--surface); font-size: 15px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
 
 .kategori-scroll { flex-shrink: 0; display: flex; gap: 7px; padding: 9px 12px; overflow-x: auto; background: var(--surface); border-bottom: 1px solid var(--border); }
@@ -181,3 +182,34 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 
 .layar-sukses-cnt { padding: 30px 24px; text-align: center; }
 .centang-sukses { width: 62px; height: 62px; border-radius: 50%; background: var(--success-50); color: var(--success); font-size: 30px; display: flex; align-items: center; justify-content: center; margin: 0 auto 14px; }
+
+/* ==== Tutup Kas: ringkasan KPI ==== */
+.ringkas-kas { background: var(--bg); border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; }
+.ringkas-kas .baris { display: flex; justify-content: space-between; font-size: 12.5px; padding: 4px 0; color: var(--muted); }
+.ringkas-kas .baris.grand { font-weight: 800; color: var(--ink); font-size: 13.5px; border-top: 1px dashed var(--border); margin-top: 4px; padding-top: 8px; }
+
+/* ==== Member: tombol pilih di keranjang, chip terpilih, form top up ==== */
+.member-pilih-btn { display: flex; align-items: center; gap: 8px; padding: 10px 12px; margin: 10px 14px 0; border-radius: 10px; border: 1.5px dashed var(--border); background: var(--bg); font-size: 12px; color: var(--muted); cursor: pointer; font-weight: 600; }
+.member-chip { display: flex; align-items: center; gap: 8px; padding: 10px 14px; margin-top: 8px; }
+.member-chip .info { flex: 1; min-width: 0; }
+.member-chip .nama { font-size: 12.5px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.member-chip .saldo { font-size: 11px; color: var(--muted); }
+.member-chip .btn-isi-saldo { flex-shrink: 0; border: none; background: var(--primary-50); color: var(--primary); font-size: 11px; font-weight: 800; padding: 6px 10px; border-radius: 8px; cursor: pointer; }
+.member-chip .btn-hapus-member { flex-shrink: 0; border: none; background: var(--bg); width: 26px; height: 26px; border-radius: 8px; cursor: pointer; font-size: 11px; }
+.form-topup { display: flex; gap: 8px; padding: 0 14px 8px; }
+.form-topup input { flex: 1; padding: 10px 12px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 13px; }
+.form-topup .btn-utama { width: auto; padding: 10px 14px; font-size: 12.5px; }
+
+/* ==== Picker Member (modal cari) ==== */
+#inCariMember, #inNominalTopup, #inPin { width: 100%; padding: 12px 13px; border: 1.5px solid var(--border); border-radius: 10px; font-size: 14px; outline: none; }
+#inCariMember:focus, #inPin:focus { border-color: var(--primary); }
+.kartu-member { display: flex; align-items: center; gap: 10px; padding: 10px 8px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.kartu-member:active { background: var(--bg); }
+.kartu-member .avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--primary-50); color: var(--primary); display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 14px; flex-shrink: 0; overflow: hidden; }
+.kartu-member .avatar img { width: 100%; height: 100%; object-fit: cover; }
+.kartu-member .info { flex: 1; min-width: 0; }
+.kartu-member .nama { font-size: 12.5px; font-weight: 700; }
+.kartu-member .sub { font-size: 11px; color: var(--muted); }
+.kartu-member .badge-pin { font-size: 10px; font-weight: 800; color: var(--warning); flex-shrink: 0; }
+.member-info-cache { font-size: 11px; color: var(--muted); padding: 6px 4px; }
+.member-kosong { text-align: center; color: var(--faint); padding: 24px 12px; font-size: 12px; }

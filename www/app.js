@@ -1,10 +1,13 @@
 /**
- * app.js -- logika Kasir Android (v1). Reuse kontrak {@code PosApi.java} yang SAMA dgn Kasir
- * Desktop (Electron): {@code login/konfigurasi/katalog/sesi_kas_status/sesi_kas_buka/bayar}.
+ * app.js -- logika Kasir Android. Reuse kontrak {@code PosApi.java} yang SAMA dgn Kasir Desktop
+ * (Electron): {@code login/konfigurasi/katalog/sesi_kas_status/sesi_kas_buka/sesi_kas_tutup/
+ * cari_member/saldo_member/verifikasi_pin/topup_saldo/bayar}.
  *
- * CAKUPAN v1 (disengaja, lihat README.md "Batasan v1"): jual produk tunai/metode "manual" +
- * cetak Bluetooth. BELUM diporting dari Desktop: pembayaran saldo member+PIN, diskon otomatis,
- * simpan/tahan keranjang, mode offline-first, pesanan online, printer Wi-Fi/USB. Semua itu bisa
+ * SEJAK v1.2.0 (paritas fase 1a+1b dgn Desktop): Tutup Kas + picker member/saldo/PIN/top-up saldo
+ * sudah diporting -- lihat blok "Sesi Kas" dan "Member". BELUM diporting dari Desktop: diskon
+ * otomatis saat checkout (BELUM ADA di Desktop juga -- lihat catatan gap 3-arah), simpan/tahan
+ * keranjang, mode offline-first (checkout masih murni online), pesanan online, printer Wi-Fi/USB,
+ * i18n, layar admin (Ringkasan/Laporan/Customer CRUD/Konfigurasi/Riwayat Sinkron). Semua itu bisa
  * ditambahkan bertahap mengikuti pola yang SAMA dgn desktop-pos-electron (aksi server sudah ADA,
  * tinggal disambungkan).
  */
@@ -47,7 +50,9 @@
         kategori: [], produk: [], kategoriAktif: null, keyword: '',
         cart: [], // {id, kode, nama, harga, jumlah}
         sesiKasTerbuka: false,
-        metodeTerpilih: null
+        sesiKasInfo: {},
+        metodeTerpilih: null,
+        memberTerpilih: null // {id, nama, kodeIdentitas, wajibPin, minSaldo}
     };
 
     // =====================================================================
@@ -391,14 +396,102 @@
     var elOverlaySesiKas = document.getElementById('overlaySesiKas');
     var elInModalAwal = document.getElementById('inModalAwal');
     var elBtnSubmitBukaKas = document.getElementById('btnSubmitBukaKas');
+    var elPillKas = document.getElementById('pillKas');
+    var elTxtKasSingkat = document.getElementById('txtKasSingkat');
+    var elOverlayTutupKas = document.getElementById('overlayTutupKas');
+    var elBtnTutupTutupKas = document.getElementById('btnTutupTutupKas');
+    var elTkModalAwal = document.getElementById('tkModalAwal');
+    var elTkTunai = document.getElementById('tkTunai');
+    var elTkNonTunai = document.getElementById('tkNonTunai');
+    var elTkSeharusnya = document.getElementById('tkSeharusnya');
+    var elInUangFisik = document.getElementById('inUangFisik');
+    var elInKetTutupKas = document.getElementById('inKetTutupKas');
+    var elBtnSubmitTutupKas = document.getElementById('btnSubmitTutupKas');
 
     async function cekSesiKas() {
         var r = await AisApi.panggil('sesi_kas_status', { id_toko: state.tokoId });
-        state.sesiKasTerbuka = r.status === 'success' && r.data && r.data.terbuka;
-        if (!state.sesiKasTerbuka) elOverlaySesiKas.classList.add('tampil');
-        else elOverlaySesiKas.classList.remove('tampil');
+        // PENTING: field server (terbuka/modalAwal/dst) ada di TOP LEVEL respons (r.terbuka), BUKAN
+        // dibungkus r.data -- beda dari pola Desktop (main.js membungkus SELURUH balasan server ke
+        // dalam {ok, data:<hasilServer>}). Android manggil server LANGSUNG (lihat api.js) jadi `r`
+        // ADALAH `hasil` mentah server apa adanya -- lihat JavaDoc KantinHelper.sesiKasStatus di server.
+        var data = (r.status === 'success') ? r : {};
+        state.sesiKasTerbuka = !!data.terbuka;
+        state.sesiKasInfo = data;
+        if (!state.sesiKasTerbuka) {
+            elOverlaySesiKas.classList.add('tampil');
+            elPillKas.style.display = 'none';
+        } else {
+            elOverlaySesiKas.classList.remove('tampil');
+            elPillKas.style.display = 'inline-flex';
+            elTxtKasSingkat.textContent = formatRupiah(data.kasSaatIni);
+        }
         renderKeranjang();
     }
+
+    /**
+     * Setelah server membalas sesi_kas_buka/tutup "berhasil", pengecekan sesi_kas_status BERIKUTNYA
+     * seharusnya langsung mencerminkan kondisi baru -- di lapangan (versi Desktop) pernah ditemukan
+     * (dgn bukti log server menunjukkan commit SUKSES) status re-check SEGERA setelahnya masih
+     * melaporkan kondisi LAMA -- dugaan latensi visibilitas baca-setelah-tulis di sisi infrastruktur
+     * server, BUKAN kesalahan penyimpanan. Coba ulang beberapa kali dgn jeda singkat sebelum
+     * benar-benar menyerah, drpd langsung menampilkan overlay "Kas Belum Dibuka" yg macet padahal
+     * server sudah sukses (lihat perbaikan v1.0.16 versi Desktop utk simtom persis sama).
+     * @param {boolean} terbukaDiharapkan
+     * @return {Promise<boolean>}
+     */
+    async function tungguStatusSesiKasSesuai(terbukaDiharapkan) {
+        var jedaMs = [300, 600, 1000, 1500, 2000];
+        for (var i = 0; i < jedaMs.length; i++) {
+            await new Promise(function (r) { setTimeout(r, jedaMs[i]); });
+            await cekSesiKas();
+            if (state.sesiKasTerbuka === terbukaDiharapkan) return true;
+        }
+        return false;
+    }
+
+    elPillKas.addEventListener('click', function () {
+        var info = state.sesiKasInfo || {};
+        var seharusnya = (Number(info.modalAwal) || 0) + (Number(info.totalTunai) || 0);
+        elTkModalAwal.textContent = formatRupiah(info.modalAwal);
+        elTkTunai.textContent = formatRupiah(info.totalTunai);
+        elTkNonTunai.textContent = formatRupiah(info.totalNonTunai);
+        elTkSeharusnya.textContent = formatRupiah(seharusnya);
+        elInUangFisik.value = Math.round(seharusnya);
+        elInKetTutupKas.value = '';
+        elOverlayTutupKas.classList.add('tampil');
+    });
+    elBtnTutupTutupKas.addEventListener('click', function () { elOverlayTutupKas.classList.remove('tampil'); });
+
+    elBtnSubmitTutupKas.addEventListener('click', async function () {
+        if (!confirm('Yakin ingin menutup kas kasir sekarang? Selisih terhadap kas seharusnya akan dicatat secara permanen.')) return;
+        var uangFisik = Number(elInUangFisik.value) || 0;
+        var keterangan = elInKetTutupKas.value || '';
+        elBtnSubmitTutupKas.disabled = true;
+        elBtnSubmitTutupKas.textContent = 'Menutup...';
+        try {
+            var r = await AisApi.panggil('sesi_kas_tutup', { id_toko: state.tokoId, uang_fisik: uangFisik, keterangan: keterangan });
+            if (r.status === 'success') {
+                await cekSesiKas();
+                if (state.sesiKasTerbuka) await tungguStatusSesiKasSesuai(false);
+                elOverlayTutupKas.classList.remove('tampil');
+                var selisih = Number(r.selisih) || 0;
+                toast(selisih < 0 ? 'error' : 'success', 'Kas ditutup. Selisih: ' + formatRupiah(selisih));
+                var stokMenipis = r.stokMenipis || [];
+                if (stokMenipis.length > 0) {
+                    setTimeout(function () {
+                        toast('info', stokMenipis.length + ' produk perlu direstok (stok di bawah ambang minimum).');
+                    }, 1200);
+                }
+            } else {
+                toast('error', pesanDariHasil(r, 'Gagal menutup kas.'));
+            }
+        } catch (e) {
+            ErrorAlert.tampilkanDariException(e, 'Tutup Kas');
+        } finally {
+            elBtnSubmitTutupKas.disabled = false;
+            elBtnSubmitTutupKas.textContent = 'Tutup Kas';
+        }
+    });
 
     elBtnSubmitBukaKas.addEventListener('click', async function () {
         var modal = Number(elInModalAwal.value) || 0;
@@ -407,8 +500,16 @@
         try {
             var r = await AisApi.panggil('sesi_kas_buka', { id_toko: state.tokoId, modal_awal: modal });
             if (r.status === 'success') {
-                toast('success', 'Kas dibuka.');
                 await cekSesiKas();
+                if (!state.sesiKasTerbuka) {
+                    elBtnSubmitBukaKas.textContent = 'Menunggu server memperbarui status...';
+                    var akhirnyaTerbuka = await tungguStatusSesiKasSesuai(true);
+                    if (!akhirnyaTerbuka) {
+                        toast('error', 'Kas sudah tersimpan di server, tapi tampilan belum ikut memperbarui -- coba tekan "Buka Kas" sekali lagi atau muat ulang aplikasi.');
+                        return;
+                    }
+                }
+                toast('success', 'Kas dibuka.');
             } else {
                 toast('error', pesanDariHasil(r, 'Gagal membuka kas.'));
             }
@@ -419,6 +520,223 @@
             elBtnSubmitBukaKas.textContent = 'Buka Kas & Mulai';
         }
     });
+
+    // =====================================================================
+    // ==== Member: picker, saldo, top-up, verifikasi PIN ====
+    // =====================================================================
+    var elOverlayMember = document.getElementById('overlayMember');
+    var elBtnTutupMember = document.getElementById('btnTutupMember');
+    var elInCariMember = document.getElementById('inCariMember');
+    var elDaftarMember = document.getElementById('daftarMember');
+    var elBtnPilihMember = document.getElementById('btnPilihMember');
+    var elMemberChip = document.getElementById('memberChip');
+    var elMemberChipNama = document.getElementById('memberChipNama');
+    var elMemberChipSaldo = document.getElementById('memberChipSaldo');
+    var elBtnIsiSaldo = document.getElementById('btnIsiSaldo');
+    var elBtnHapusMember = document.getElementById('btnHapusMember');
+    var elFormTopup = document.getElementById('formTopup');
+    var elInNominalTopup = document.getElementById('inNominalTopup');
+    var elBtnSubmitTopup = document.getElementById('btnSubmitTopup');
+
+    function bukaPickerMember() {
+        elInCariMember.value = '';
+        elDaftarMember.innerHTML = '<div class="member-kosong">Ketik nama/kode member...</div>';
+        elOverlayMember.classList.add('tampil');
+        elInCariMember.focus();
+    }
+    elBtnPilihMember.addEventListener('click', bukaPickerMember);
+    document.getElementById('btnMember').addEventListener('click', bukaPickerMember);
+    elBtnTutupMember.addEventListener('click', function () { elOverlayMember.classList.remove('tampil'); });
+
+    var cariMemberTimer = null;
+    elInCariMember.addEventListener('input', function () {
+        clearTimeout(cariMemberTimer);
+        var kw = elInCariMember.value.trim();
+        cariMemberTimer = setTimeout(function () { jalankanCariMember(kw); }, 350);
+    });
+
+    async function jalankanCariMember(keyword) {
+        if (!keyword) { elDaftarMember.innerHTML = '<div class="member-kosong">Ketik nama/kode member...</div>'; return; }
+        elDaftarMember.innerHTML = '<div class="member-kosong">Mencari...</div>';
+        try {
+            var r = await AisApi.panggil('cari_member', { keyword: keyword });
+            if (r.status !== 'success') { elDaftarMember.innerHTML = '<div class="member-kosong">' + escapeHtml(pesanDariHasil(r, 'Gagal mencari.')) + '</div>'; return; }
+            renderDaftarMember(r.member || []);
+        } catch (e) {
+            elDaftarMember.innerHTML = '<div class="member-kosong">Gagal mencari: ' + escapeHtml(e && e.message ? e.message : e) + '</div>';
+        }
+    }
+
+    function renderDaftarMember(daftar) {
+        if (daftar.length === 0) { elDaftarMember.innerHTML = '<div class="member-kosong">Tidak ada member yang cocok.</div>'; return; }
+        elDaftarMember.innerHTML = '';
+        daftar.forEach(function (m) {
+            var kartu = document.createElement('div');
+            kartu.className = 'kartu-member';
+            kartu.innerHTML = '<div class="avatar"></div><div class="info"><div class="nama"></div><div class="sub"></div></div>';
+            kartu.querySelector('.avatar').textContent = (m.nama || '?').trim().charAt(0).toUpperCase();
+            kartu.querySelector('.nama').textContent = m.nama;
+            kartu.querySelector('.sub').textContent = m.kodeIdentitas || '-';
+            if (m.wajibPin) {
+                var badge = document.createElement('span');
+                badge.className = 'badge-pin';
+                badge.textContent = '\u{1F512} PIN';
+                kartu.appendChild(badge);
+            }
+            kartu.addEventListener('click', function () { pilihMember(m); elOverlayMember.classList.remove('tampil'); });
+            elDaftarMember.appendChild(kartu);
+        });
+    }
+
+    function pilihMember(m) {
+        state.memberTerpilih = m;
+        elBtnPilihMember.style.display = 'none';
+        elMemberChip.style.display = 'flex';
+        elMemberChipNama.textContent = m.nama + (m.wajibPin ? ' \u{1F512}' : '');
+        elMemberChipSaldo.textContent = 'Memeriksa saldo...';
+        elBtnIsiSaldo.style.display = 'inline-block';
+        elFormTopup.style.display = 'none';
+        segarkanSaldoMemberTerpilih();
+    }
+
+    async function segarkanSaldoMemberTerpilih() {
+        if (!state.memberTerpilih) return;
+        var idSaatDipanggil = state.memberTerpilih.id;
+        try {
+            var r = await AisApi.panggil('saldo_member', { id_member: idSaatDipanggil });
+            if (!state.memberTerpilih || state.memberTerpilih.id !== idSaatDipanggil) return; // member sudah diganti selagi menunggu
+            if (r.status === 'success') {
+                elMemberChipSaldo.textContent = 'Saldo: ' + formatRupiah(Number(r.data) || 0);
+            } else {
+                elMemberChipSaldo.textContent = 'Saldo: gagal diperiksa';
+            }
+        } catch (e) {
+            elMemberChipSaldo.textContent = 'Saldo: gagal diperiksa (offline?)';
+        }
+    }
+
+    elBtnHapusMember.addEventListener('click', function () {
+        state.memberTerpilih = null;
+        elMemberChip.style.display = 'none';
+        elBtnPilihMember.style.display = 'flex';
+        elFormTopup.style.display = 'none';
+    });
+
+    elBtnIsiSaldo.addEventListener('click', function () {
+        var tampil = elFormTopup.style.display !== 'none';
+        elFormTopup.style.display = tampil ? 'none' : 'flex';
+        elInNominalTopup.value = '';
+        if (!tampil) elInNominalTopup.focus();
+    });
+
+    elBtnSubmitTopup.addEventListener('click', async function () {
+        if (!state.memberTerpilih) return;
+        var nominal = Number(elInNominalTopup.value) || 0;
+        if (nominal <= 0) { toast('error', 'Nominal top up tidak valid.'); return; }
+        elBtnSubmitTopup.disabled = true;
+        try {
+            var r = await AisApi.panggil('topup_saldo', { id_member: state.memberTerpilih.id, nominal: nominal });
+            if (r.status === 'success') {
+                toast('success', 'Saldo berhasil diisi.');
+                elFormTopup.style.display = 'none';
+                segarkanSaldoMemberTerpilih();
+            } else {
+                toast('error', pesanDariHasil(r, 'Gagal mengisi saldo.'));
+            }
+        } catch (e) {
+            ErrorAlert.tampilkanDariException(e, 'Isi Saldo');
+        } finally {
+            elBtnSubmitTopup.disabled = false;
+        }
+    });
+
+    // ==== Verifikasi PIN (di layar utama -- app ini tak punya konsep Layar Pelanggan/monitor kedua) ====
+    var elOverlayPin = document.getElementById('overlayPin');
+    var elPinKeterangan = document.getElementById('pinKeterangan');
+    var elInPin = document.getElementById('inPin');
+    var elPinError = document.getElementById('pinError');
+    var elBtnSubmitPin = document.getElementById('btnSubmitPin');
+    var elBtnBatalPin = document.getElementById('btnBatalPin');
+
+    function mintaPin(memberNama, memberId) {
+        return new Promise(function (resolve) {
+            elPinKeterangan.textContent = 'Minta ' + memberNama + ' memasukkan PIN.';
+            elInPin.value = '';
+            elPinError.textContent = '';
+            elBtnSubmitPin.disabled = false;
+            elBtnSubmitPin.textContent = 'Verifikasi';
+            elOverlayPin.classList.add('tampil');
+            elInPin.focus();
+
+            function selesai(hasil) {
+                elOverlayPin.classList.remove('tampil');
+                elBtnBatalPin.onclick = null;
+                elBtnSubmitPin.onclick = null;
+                resolve(hasil);
+            }
+            elBtnBatalPin.onclick = function () { selesai({ ok: false }); };
+            elBtnSubmitPin.onclick = async function () {
+                var pin = elInPin.value.trim();
+                if (!pin) { elInPin.focus(); return; }
+                elBtnSubmitPin.disabled = true;
+                elBtnSubmitPin.textContent = 'Memeriksa...';
+                elPinError.textContent = '';
+                try {
+                    var r = await AisApi.panggil('verifikasi_pin', { memberId: memberId, pin: pin });
+                    var cocok = r.status === 'success' && r.ok === true;
+                    if (cocok) {
+                        selesai({ ok: true });
+                    } else {
+                        elPinError.textContent = r.status === 'success' ? 'PIN salah, coba lagi.' : pesanDariHasil(r, 'Gagal memeriksa PIN.');
+                        elInPin.value = '';
+                        elInPin.focus();
+                    }
+                } catch (e) {
+                    elPinError.textContent = 'Gagal memeriksa PIN: ' + (e && e.message ? e.message : e);
+                } finally {
+                    elBtnSubmitPin.disabled = false;
+                    elBtnSubmitPin.textContent = 'Verifikasi';
+                }
+            };
+        });
+    }
+
+    /**
+     * Gerbang saldo+PIN sebelum checkout metode "saldo" (manual===false) -- mirror gerbangSaldoDanPin
+     * milik Desktop, TAPI cuma jalur "PIN di layar utama" (app ini tak punya konsep Layar
+     * Pelanggan/monitor kedua terpisah -- selalu diketik langsung oleh kasir/pembeli di layar yg sama).
+     * @param {number} total
+     * @return {Promise<{lolos:boolean, pesan?:string}>}
+     */
+    async function gerbangSaldoDanPin(total) {
+        if (!state.memberTerpilih) return { lolos: false, pesan: 'Pilih member dulu sebelum bayar pakai metode Saldo.' };
+        var saldoTerbaru = 0;
+        try {
+            var r = await AisApi.panggil('saldo_member', { id_member: state.memberTerpilih.id });
+            if (r.status !== 'success') return { lolos: false, pesan: pesanDariHasil(r, 'Gagal memeriksa saldo.') };
+            saldoTerbaru = Number(r.data) || 0;
+        } catch (e) {
+            return { lolos: false, pesan: 'Gagal memeriksa saldo: ' + (e && e.message ? e.message : e) };
+        }
+        if (saldoTerbaru < total) {
+            return { lolos: false, pesan: 'Saldo ' + state.memberTerpilih.nama + ' saat ini ' + formatRupiah(saldoTerbaru) + ' -- kurang ' + formatRupiah(total - saldoTerbaru) + ' dari total ' + formatRupiah(total) + '.' };
+        }
+        var minSaldo = state.memberTerpilih.minSaldo || 0;
+        if ((saldoTerbaru - total) < minSaldo) {
+            return { lolos: false, pesan: 'Saldo akan tersisa ' + formatRupiah(saldoTerbaru - total) + ', di bawah batas minimal yang harus mengendap ' + formatRupiah(minSaldo) + '.' };
+        }
+        if (!state.memberTerpilih.wajibPin) return { lolos: true };
+        var hasilPin = await mintaPin(state.memberTerpilih.nama, state.memberTerpilih.id);
+        if (!hasilPin.ok) return { lolos: false, pesan: 'Verifikasi PIN dibatalkan.' };
+        return { lolos: true };
+    }
+
+    function resetMemberTerpilih() {
+        state.memberTerpilih = null;
+        elMemberChip.style.display = 'none';
+        elBtnPilihMember.style.display = 'flex';
+        elFormTopup.style.display = 'none';
+    }
 
     // =====================================================================
     // ==== Checkout ====
@@ -490,6 +808,16 @@
         var kodeUnik = buatKodeUnik();
         var sekarang = new Date();
 
+        var pakaiSaldo = state.metodeTerpilih && state.metodeTerpilih.manual === false;
+        if (pakaiSaldo) {
+            elBtnSubmitBayar.disabled = true;
+            elBtnSubmitBayar.textContent = 'Memeriksa saldo...';
+            var gerbang = await gerbangSaldoDanPin(subtotal);
+            elBtnSubmitBayar.disabled = false;
+            elBtnSubmitBayar.textContent = 'Proses Pembayaran';
+            if (!gerbang.lolos) { toast('error', gerbang.pesan || 'Pembayaran Saldo tidak bisa dilanjutkan.'); return; }
+        }
+
         var payload = {
             kodeUnik: kodeUnik, clientTrxId: kodeUnik,
             idToko: state.tokoId, tokoId: state.tokoId,
@@ -497,7 +825,7 @@
             waktu: sekarang.toISOString(),
             caraBayar: state.metodeTerpilih.id,
             total: subtotal,
-            id_member: null,
+            id_member: state.memberTerpilih ? state.memberTerpilih.id : null,
             transaksi: state.cart.map(function (c) {
                 return { id: c.id, kode: c.kode, nama: c.nama, harga: c.harga, jumlah: c.jumlah, diskon: 0, aturanDiskon: null, cashback: 0 };
             })
@@ -519,6 +847,7 @@
                 document.getElementById('overlaySukses').classList.add('tampil');
                 state.cart = [];
                 renderKeranjang();
+                resetMemberTerpilih();
                 muatKatalog(); // stok berubah -- muat ulang supaya badge stok akurat
             } else {
                 toast('error', pesanDariHasil(r, 'Pembayaran gagal.'));

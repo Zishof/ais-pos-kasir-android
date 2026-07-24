@@ -20,7 +20,7 @@
 
     var REPO_GITHUB = 'Zishof/ais-pos-kasir-android';
     var NAMA_APLIKASI = 'AIS POS Kasir Android';
-    var VERSI_APLIKASI = '1.1.2';
+    var VERSI_APLIKASI = '1.2.0';
 
     // ==== Riwayat error lokal -- app ini TIDAK punya layar "Log Error" tersendiri spt Desktop, jadi
     // SETIAP alert yg tampil (lihat tampilkan()) juga dicatat ke localStorage supaya kasir/admin bisa
