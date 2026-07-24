@@ -1,6 +1,6 @@
 {
   "name": "ais-pos-kasir-android",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "AIS POS Kasir - aplikasi Android (tablet/HP) untuk kasir kantin/koperasi, responsif, cetak struk via Bluetooth (ESC/POS). Klien ke-3 dari backend PosApi.java yang sama dengan Kasir Desktop (Electron).",
   "private": true,
   "scripts": {

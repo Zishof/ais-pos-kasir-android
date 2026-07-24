@@ -15,7 +15,7 @@
     'use strict';
 
     var REPO_GITHUB = 'Zishof/ais-pos-kasir-android';
-    var VERSI_SAAT_INI = '1.3.0';
+    var VERSI_SAAT_INI = '1.4.0';
     var KUNCI_DISMISS = 'ais_pos_update_dismiss_v1';
 
     /** Bandingkan 2 string versi ala semver ("1.2.0" vs "v1.10.3") -- return >0 bila a > b. */

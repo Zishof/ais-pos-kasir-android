@@ -98,6 +98,21 @@
         });
     }
 
+    /** @return {Promise<Array>} SELURUH baris (PENDING+SYNCED), terbaru dulu -- dipakai layar Riwayat Sinkronisasi. */
+    async function listSemua() {
+        var db = await bukaDb();
+        return new Promise(function (resolve, reject) {
+            var tx = db.transaction(STORE, 'readonly');
+            var req = tx.objectStore(STORE).getAll();
+            req.onsuccess = function () {
+                var rows = req.result || [];
+                rows.sort(function (a, b) { return (b.disimpanPada || '').localeCompare(a.disimpanPada || ''); });
+                resolve(rows);
+            };
+            req.onerror = function () { reject(req.error); };
+        });
+    }
+
     async function hitungPending() {
         try { return (await listPending()).length; } catch (e) { return 0; }
     }
@@ -151,6 +166,7 @@
         tandaiSinkron: tandaiSinkron,
         tandaiGagal: tandaiGagal,
         listPending: listPending,
+        listSemua: listSemua,
         hitungPending: hitungPending,
         sinkronkanSemua: sinkronkanSemua,
         mulaiAutoSync: mulaiAutoSync

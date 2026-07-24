@@ -56,6 +56,7 @@
         <button type="button" class="btn-nanti" id="updBtnNanti">Nanti</button>
     </div>
     <div class="topbar">
+        <button class="btn-ikon" id="btnMenu" title="Menu">&#9776;</button>
         <div>
             <div class="brand">AIS POS Kasir</div>
             <div class="toko" id="txtNamaToko">-</div>
@@ -107,6 +108,56 @@
             &#128722; <span class="lencana" id="fabJumlah">0</span>
         </button>
     </div>
+</div>
+
+<!-- ==== Menu Navigasi (drawer) ==== -->
+<div class="drawer-overlay" id="drawerOverlay">
+    <div class="drawer">
+        <div class="drawer-kepala">
+            <div class="brand">AIS POS Kasir</div>
+            <div class="toko" id="drawerNamaToko">-</div>
+        </div>
+        <nav class="drawer-nav">
+            <button type="button" class="drawer-item aktif" data-layar="layarPos">&#128179; <span>Kasir</span></button>
+            <button type="button" class="drawer-item" data-layar="layarRingkasan">&#128202; <span>Ringkasan</span></button>
+            <button type="button" class="drawer-item" data-layar="layarRiwayatSinkron">&#128260; <span>Riwayat Sinkronisasi</span></button>
+            <button type="button" class="drawer-item" data-layar="layarLogError">&#128721; <span>Log Error</span></button>
+        </nav>
+    </div>
+</div>
+
+<!-- ==== Layar Ringkasan ==== -->
+<div class="layar" id="layarRingkasan">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackRingkasan" title="Kembali">&#8592;</button>
+        <div class="brand">Ringkasan Hari Ini</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnMuatUlangRingkasan" title="Muat Ulang">&#128260;</button>
+    </div>
+    <div class="konten-scroll" id="isiRingkasan"><div class="layar-kosong">Memuat...</div></div>
+</div>
+
+<!-- ==== Layar Riwayat Sinkronisasi ==== -->
+<div class="layar" id="layarRiwayatSinkron">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackRiwayatSinkron" title="Kembali">&#8592;</button>
+        <div class="brand">Riwayat Sinkronisasi</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnMuatUlangRiwayatSinkron" title="Muat Ulang">&#128260;</button>
+    </div>
+    <div class="konten-scroll" id="isiRiwayatSinkron"><div class="layar-kosong">Memuat...</div></div>
+</div>
+
+<!-- ==== Layar Log Error ==== -->
+<div class="layar" id="layarLogError">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackLogError" title="Kembali">&#8592;</button>
+        <div class="brand">Log Error</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnSalinSemuaLogError" title="Salin Semua Error">&#128203;</button>
+        <button class="btn-ikon" id="btnBersihkanLogError" title="Bersihkan Semua">&#128465;&#65039;</button>
+    </div>
+    <div class="konten-scroll" id="isiLogError"><div class="layar-kosong">Memuat...</div></div>
 </div>
 
 <!-- ==== Modal: Sesi Kas (buka) ==== -->

@@ -20,7 +20,7 @@
 
     var REPO_GITHUB = 'Zishof/ais-pos-kasir-android';
     var NAMA_APLIKASI = 'AIS POS Kasir Android';
-    var VERSI_APLIKASI = '1.3.0';
+    var VERSI_APLIKASI = '1.4.0';
 
     // ==== Riwayat error lokal -- app ini TIDAK punya layar "Log Error" tersendiri spt Desktop, jadi
     // SETIAP alert yg tampil (lihat tampilkan()) juga dicatat ke localStorage supaya kasir/admin bisa
@@ -279,7 +279,11 @@
         tampilkan: tampilkan,
         tampilkanKode: tampilkanKode,
         tampilkanDariException: tampilkanDariException,
-        aturAplikasi: function (repo, nama, versi) { REPO_GITHUB = repo; NAMA_APLIKASI = nama; VERSI_APLIKASI = versi; }
+        aturAplikasi: function (repo, nama, versi) { REPO_GITHUB = repo; NAMA_APLIKASI = nama; VERSI_APLIKASI = versi; },
+        // Diekspos utk layar "Log Error" penuh (lihat app.js) -- BUKAN cuma dari dalam modal alert lagi.
+        bacaRiwayat: bacaRiwayat,
+        bersihkanRiwayat: function () { try { localStorage.removeItem(RIWAYAT_KEY); } catch (e) { /* abaikan */ } },
+        salinKeClipboard: salinKeClipboard
     };
 
     // ==== Penangkap global -- SETIAP error tak tertangkap tampil sbg alert, bukan cuma hilang diam2 ====

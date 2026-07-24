@@ -1061,6 +1061,118 @@
         segarkanBadgeSinkron();
     }
 
+    // =====================================================================
+    // ==== Navigasi (drawer) + Layar Ringkasan/Riwayat Sinkronisasi/Log Error ====
+    // Aplikasi ini SATU HALAMAN (beda dari Desktop yg tiap layar berkas HTML terpisah dgn sidebar
+    // permanen) -- semua layar tambahan adalah <div class="layar"> lain yg ditoggle via
+    // tampilkanLayar() yg sudah ada, dibuka lewat drawer (menu hamburger) ini.
+    // =====================================================================
+    var elBtnMenu = document.getElementById('btnMenu');
+    var elDrawerOverlay = document.getElementById('drawerOverlay');
+    var elDrawerNamaToko = document.getElementById('drawerNamaToko');
+
+    function bukaDrawer() {
+        elDrawerNamaToko.textContent = state.tokoNama || ('Kasir - ' + state.userId);
+        elDrawerOverlay.classList.add('tampil');
+    }
+    function tutupDrawer() { elDrawerOverlay.classList.remove('tampil'); }
+    elBtnMenu.addEventListener('click', bukaDrawer);
+    elDrawerOverlay.addEventListener('click', function (ev) { if (ev.target === elDrawerOverlay) tutupDrawer(); });
+
+    document.querySelectorAll('.drawer-item').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            document.querySelectorAll('.drawer-item').forEach(function (b) { b.classList.remove('aktif'); });
+            btn.classList.add('aktif');
+            var target = btn.getAttribute('data-layar');
+            tutupDrawer();
+            tampilkanLayar(target);
+            if (target === 'layarRingkasan') muatRingkasan();
+            else if (target === 'layarRiwayatSinkron') muatRiwayatSinkron();
+            else if (target === 'layarLogError') muatLogError();
+        });
+    });
+
+    // ---- Ringkasan Hari Ini ----
+    var elIsiRingkasan = document.getElementById('isiRingkasan');
+    async function muatRingkasan() {
+        elIsiRingkasan.innerHTML = '<div class="layar-kosong">Memuat...</div>';
+        try {
+            var r = await AisApi.panggil('ringkasan', {});
+            if (r.status !== 'success') { elIsiRingkasan.innerHTML = '<div class="layar-kosong">' + escapeHtml(pesanDariHasil(r, 'Gagal memuat ringkasan.')) + '</div>'; return; }
+            var terlaris = r.produkTerlaris || [];
+            var html = '<div class="ringkas-bar">'
+                + '<div class="kartu-ringkas"><div class="label">Omzet Hari Ini</div><div class="nilai">' + formatRupiah(r.omzetHariIni) + '</div></div>'
+                + '<div class="kartu-ringkas"><div class="label">Transaksi</div><div class="nilai">' + (r.transaksiHariIni || 0) + '</div></div>'
+                + '<div class="kartu-ringkas" style="grid-column:1/-1;"><div class="label">Item Terjual</div><div class="nilai">' + (r.qtyTerjualHariIni || 0) + '</div></div>'
+                + '</div>'
+                + '<div class="sub-judul">Produk Terlaris Hari Ini</div>';
+            html += terlaris.length === 0
+                ? '<div class="layar-kosong">Belum ada penjualan hari ini.</div>'
+                : terlaris.map(function (p) { return '<div class="baris-terlaris"><span>' + escapeHtml(p.nama) + '</span><span>' + p.qty + ' terjual</span></div>'; }).join('');
+            elIsiRingkasan.innerHTML = html;
+        } catch (e) {
+            elIsiRingkasan.innerHTML = '<div class="layar-kosong">Gagal memuat: ' + escapeHtml(e && e.message ? e.message : e) + '</div>';
+        }
+    }
+    document.getElementById('btnBackRingkasan').addEventListener('click', function () { kembaliKeKasir(); });
+    document.getElementById('btnMuatUlangRingkasan').addEventListener('click', muatRingkasan);
+
+    // ---- Riwayat Sinkronisasi ----
+    var elIsiRiwayatSinkron = document.getElementById('isiRiwayatSinkron');
+    async function muatRiwayatSinkron() {
+        elIsiRiwayatSinkron.innerHTML = '<div class="layar-kosong">Memuat...</div>';
+        try {
+            var daftar = await OfflineQueue.listSemua();
+            if (daftar.length === 0) { elIsiRiwayatSinkron.innerHTML = '<div class="layar-kosong">Belum ada transaksi tercatat di perangkat ini.</div>'; return; }
+            elIsiRiwayatSinkron.innerHTML = daftar.map(function (row) {
+                var waktu = '-';
+                try { waktu = new Date(row.disimpanPada).toLocaleString('id-ID'); } catch (e2) { /* abaikan */ }
+                var statusKelas = row.status === 'SYNCED' ? 'synced' : 'pending';
+                var statusLabel = row.status === 'SYNCED' ? 'Tersinkron' : 'Menunggu';
+                return '<div class="baris-riwayat-item"><div class="atas"><span class="kode">' + escapeHtml(row.clientTrxId) + '</span>'
+                    + '<span class="lencana-status ' + statusKelas + '">' + statusLabel + '</span></div>'
+                    + '<div class="waktu">' + escapeHtml(waktu) + ' -- ' + formatRupiah(row.total) + '</div>'
+                    + (row.pesanError ? '<div class="waktu" style="color:var(--danger);">' + escapeHtml(row.pesanError) + '</div>' : '')
+                    + '</div>';
+            }).join('');
+        } catch (e) {
+            elIsiRiwayatSinkron.innerHTML = '<div class="layar-kosong">Gagal memuat: ' + escapeHtml(e && e.message ? e.message : e) + '</div>';
+        }
+    }
+    document.getElementById('btnBackRiwayatSinkron').addEventListener('click', function () { kembaliKeKasir(); });
+    document.getElementById('btnMuatUlangRiwayatSinkron').addEventListener('click', muatRiwayatSinkron);
+
+    // ---- Log Error (baca riwayat yg sama dipakai modal ErrorAlert, lihat error-alert.js#bacaRiwayat) ----
+    var elIsiLogError = document.getElementById('isiLogError');
+    function muatLogError() {
+        var daftar = (window.ErrorAlert && ErrorAlert.bacaRiwayat) ? ErrorAlert.bacaRiwayat().slice().reverse() : [];
+        if (daftar.length === 0) { elIsiLogError.innerHTML = '<div class="layar-kosong">Belum ada error/exception tercatat -- bagus!</div>'; return; }
+        elIsiLogError.innerHTML = daftar.map(function (row) {
+            var waktu = '-';
+            try { waktu = new Date(row.waktu).toLocaleString('id-ID'); } catch (e2) { /* abaikan */ }
+            return '<div class="baris-log-item"><div class="atas"><span class="pesan">' + escapeHtml(row.judul) + '</span><span class="waktu">' + escapeHtml(waktu) + '</span></div>'
+                + '<div class="sumber">' + escapeHtml((row.teknis || '').slice(0, 160)) + '</div></div>';
+        }).join('');
+    }
+    document.getElementById('btnBackLogError').addEventListener('click', function () { kembaliKeKasir(); });
+    document.getElementById('btnSalinSemuaLogError').addEventListener('click', function () {
+        var daftar = (window.ErrorAlert && ErrorAlert.bacaRiwayat) ? ErrorAlert.bacaRiwayat() : [];
+        if (daftar.length === 0) { toast('info', 'Belum ada error untuk disalin.'); return; }
+        var teks = daftar.map(function (r) { return '[' + r.waktu + '] ' + r.judul + '\n' + r.teknis; }).join('\n\n---\n\n');
+        ErrorAlert.salinKeClipboard(teks);
+    });
+    document.getElementById('btnBersihkanLogError').addEventListener('click', function () {
+        if (!confirm('Hapus seluruh riwayat error tersimpan di perangkat ini?')) return;
+        if (window.ErrorAlert && ErrorAlert.bersihkanRiwayat) ErrorAlert.bersihkanRiwayat();
+        muatLogError();
+        toast('success', 'Riwayat error dibersihkan.');
+    });
+
+    function kembaliKeKasir() {
+        document.querySelectorAll('.drawer-item').forEach(function (b) { b.classList.toggle('aktif', b.getAttribute('data-layar') === 'layarPos'); });
+        tampilkanLayar('layarPos');
+    }
+
     (async function start() {
         await isiFormDariCfgTersimpan();
         var adaToken = await AisApi.muatTokenTersimpan();
