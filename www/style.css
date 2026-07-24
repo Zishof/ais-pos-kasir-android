@@ -87,6 +87,8 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .upd-banner button { flex-shrink: 0; border: none; border-radius: 8px; padding: 6px 12px; font-size: 11.5px; font-weight: 800; cursor: pointer; }
 .upd-banner .btn-lihat { background: #fff; color: var(--primary); }
 .upd-banner .btn-nanti { background: rgba(255,255,255,.22); color: #fff; }
+.upd-status { font-size: 12px; font-weight: 700; color: var(--primary); background: var(--bg); padding: 9px 12px; border-radius: 9px; margin: 0 0 12px; }
+.upd-status.error { color: var(--danger); background: var(--danger-50); }
 .topbar { flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 10px 14px; padding-top: calc(10px + var(--safe-top)); background: var(--surface); border-bottom: 1px solid var(--border); }
 .topbar .brand { font-weight: 800; font-size: 14.5px; flex-shrink: 0; }
 .topbar .toko { font-size: 11px; color: var(--muted); }

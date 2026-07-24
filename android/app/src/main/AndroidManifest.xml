@@ -40,6 +40,12 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
 
+    <!-- Fitur "Update Otomatis" (mirip Windows Update): unduh APK rilis baru dari GitHub lalu buka
+         installer sistem Android (lihat ApkInstallerPlugin.java + updater.js). Android 8+ (API 26+)
+         mewajibkan izin ini per-aplikasi utk memicu instalasi APK dari luar Play Store; tanpa ini
+         sistem menolak diam-diam/menampilkan halaman "izinkan sumber tidak dikenal" yang membingungkan. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
     <!-- Cetak struk via Bluetooth Classic/SPP (cordova-plugin-bluetooth-serial), lihat JavaDoc
          escpos.js. BLUETOOTH/BLUETOOTH_ADMIN utk Android <=11; BLUETOOTH_CONNECT/BLUETOOTH_SCAN
          (dgn "neverForLocation") utk Android 12+ (API 31+) yang memecah izin Bluetooth lama. -->
