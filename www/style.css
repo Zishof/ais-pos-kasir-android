@@ -54,6 +54,32 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .pesan-error { background: var(--danger-50); color: var(--danger); font-size: 12px; font-weight: 600; padding: 9px 12px; border-radius: 9px; margin-bottom: 12px; display: none; }
 .pesan-error.tampil { display: block; }
 
+/* ==== Wizard Pengaturan Server + Masuk (2 langkah) ==== */
+.langkah-dots { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 20px; }
+.langkah-dots .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); transition: background .2s, width .2s; }
+.langkah-dots .dot.aktif { background: var(--primary); width: 22px; border-radius: 4px; }
+.langkah-dots .dot.selesai { background: var(--success); }
+.langkah-label { text-align: center; font-size: 10.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-bottom: 4px; }
+
+.step-wizard { display: none; }
+.step-wizard.aktif { display: block; }
+
+.preview-url { background: var(--bg); border: 1px dashed var(--border); border-radius: 9px; padding: 9px 11px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11px; color: var(--muted); word-break: break-all; margin-bottom: 14px; }
+
+.hasil-tes { display: none; align-items: flex-start; gap: 8px; padding: 10px 12px; border-radius: 10px; font-size: 12px; font-weight: 600; margin-bottom: 14px; line-height: 1.5; }
+.hasil-tes.tampil { display: flex; }
+.hasil-tes.sukses { background: var(--success-50); color: var(--success); }
+.hasil-tes.gagal { background: var(--danger-50); color: var(--danger); }
+.hasil-tes.proses { background: var(--bg); color: var(--muted); }
+.hasil-tes .ico { flex-shrink: 0; }
+
+.btn-tes { width: 100%; padding: 12px; background: var(--surface); color: var(--primary); border: 1.5px solid var(--primary); border-radius: 12px; font-size: 13.5px; font-weight: 800; cursor: pointer; margin-bottom: 10px; }
+.btn-tes:disabled { opacity: .55; }
+
+.baris-server-aktif { display: flex; align-items: center; gap: 8px; background: var(--bg); border-radius: 9px; padding: 9px 11px; margin-bottom: 16px; font-size: 11px; color: var(--muted); }
+.baris-server-aktif .txt { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.baris-server-aktif button { flex-shrink: 0; background: none; border: none; color: var(--primary); font-weight: 700; font-size: 11px; cursor: pointer; }
+
 /* ==== Shell utama ==== */
 #layarPos { flex-direction: column; }
 .topbar { flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 10px 14px; padding-top: calc(10px + var(--safe-top)); background: var(--surface); border-bottom: 1px solid var(--border); }

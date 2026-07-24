@@ -1,6 +1,6 @@
 /**
  * app.js -- logika Kasir Android (v1). Reuse kontrak {@code PosApi.java} yang SAMA dgn Kasir
- * Desktop (Electron): {@code login/konfigurasi/katalog/sesi_kas_*/bayar}.
+ * Desktop (Electron): {@code login/konfigurasi/katalog/sesi_kas_status/sesi_kas_buka/bayar}.
  *
  * CAKUPAN v1 (disengaja, lihat README.md "Batasan v1"): jual produk tunai/metode "manual" +
  * cetak Bluetooth. BELUM diporting dari Desktop: pembayaran saldo member+PIN, diskon otomatis,
@@ -51,15 +51,54 @@
     };
 
     // =====================================================================
-    // ==== Layar Login ====
+    // ==== Layar Login -- wizard 2 langkah (Pengaturan Server -> Masuk) ====
     // =====================================================================
-    var elLoginError = document.getElementById('loginError');
+    var elServerError = document.getElementById('serverError');
     var elInHost = document.getElementById('inHost');
     var elInContextPath = document.getElementById('inContextPath');
     var elInHttps = document.getElementById('inHttps');
+    var elPreviewUrl = document.getElementById('previewUrl');
+    var elHasilTes = document.getElementById('hasilTes');
+    var elHasilTesTeks = document.getElementById('hasilTesTeks');
+    var elBtnTesKoneksi = document.getElementById('btnTesKoneksi');
+    var elBtnLanjutKeLogin = document.getElementById('btnLanjutKeLogin');
+    var elDotLangkah1 = document.getElementById('dotLangkah1');
+    var elDotLangkah2 = document.getElementById('dotLangkah2');
+    var elStepServer = document.getElementById('stepServer');
+    var elStepMasuk = document.getElementById('stepMasuk');
+    var elTxtServerAktif = document.getElementById('txtServerAktif');
+    var elBtnGantiServer = document.getElementById('btnGantiServer');
+
+    var elLoginError = document.getElementById('loginError');
     var elInUserid = document.getElementById('inUserid');
     var elInPassword = document.getElementById('inPassword');
     var elBtnMasuk = document.getElementById('btnMasuk');
+
+    /** {@code true} hanya bila tes koneksi SUKSES utk kombinasi host/contextPath/https PERSIS
+     * sama dgn yg tampil saat ini -- direset tiap input berubah, supaya "Lanjut" tak pernah
+     * mengizinkan konfigurasi yg belum benar-benar terverifikasi. Pola sama dgn wizard Desktop. */
+    var sudahTesBerhasil = false;
+
+    function cfgDariFormServer() {
+        return { host: elInHost.value.trim(), contextPath: elInContextPath.value.trim(), https: elInHttps.checked };
+    }
+
+    function segarkanPreviewUrl() {
+        var cfg = cfgDariFormServer();
+        var skema = cfg.https ? 'https' : 'http';
+        var host = cfg.host || '...';
+        var ctx = cfg.contextPath ? cfg.contextPath.replace(/^\/+|\/+$/g, '') + '/' : '';
+        elPreviewUrl.textContent = skema + '://' + host + '/' + ctx + 'PosApi';
+    }
+
+    function tandaiBelumTes() {
+        sudahTesBerhasil = false;
+        elBtnLanjutKeLogin.disabled = true;
+        elHasilTes.className = 'hasil-tes';
+        segarkanPreviewUrl();
+    }
+    [elInHost, elInContextPath].forEach(function (el) { el.addEventListener('input', tandaiBelumTes); });
+    elInHttps.addEventListener('change', tandaiBelumTes);
 
     async function isiFormDariCfgTersimpan() {
         var cfg = await AisApi.bacaCfg();
@@ -69,30 +108,97 @@
             elInHttps.checked = cfg.https !== false;
             elInUserid.value = cfg.username || '';
         }
+        segarkanPreviewUrl();
     }
+
+    elBtnTesKoneksi.addEventListener('click', async function () {
+        var cfg = cfgDariFormServer();
+        if (!cfg.host) {
+            elServerError.textContent = 'Alamat server wajib diisi.';
+            elServerError.className = 'pesan-error tampil';
+            return;
+        }
+        elServerError.className = 'pesan-error';
+        elBtnTesKoneksi.disabled = true;
+        elHasilTes.className = 'hasil-tes tampil proses';
+        elHasilTes.querySelector('.ico').textContent = '⏳';
+        elHasilTesTeks.textContent = 'Menghubungi server...';
+        try {
+            var r = await AisApi.tesKoneksi(cfg);
+            if (r.ok) {
+                sudahTesBerhasil = true;
+                elBtnLanjutKeLogin.disabled = false;
+                elHasilTes.className = 'hasil-tes tampil sukses';
+                elHasilTes.querySelector('.ico').textContent = '✅';
+                elHasilTesTeks.textContent = 'Berhasil terhubung ke server.';
+            } else {
+                sudahTesBerhasil = false;
+                elBtnLanjutKeLogin.disabled = true;
+                elHasilTes.className = 'hasil-tes tampil gagal';
+                elHasilTes.querySelector('.ico').textContent = '❌';
+                elHasilTesTeks.textContent = r.pesan || 'Gagal terhubung.';
+                if (r.error) ErrorAlert.tampilkanDariException(r.error, 'Tes Koneksi');
+            }
+        } catch (e) {
+            sudahTesBerhasil = false;
+            elBtnLanjutKeLogin.disabled = true;
+            elHasilTes.className = 'hasil-tes tampil gagal';
+            elHasilTesTeks.textContent = 'Terjadi kesalahan tak terduga saat menguji koneksi.';
+            ErrorAlert.tampilkanDariException(e, 'Tes Koneksi');
+        } finally {
+            elBtnTesKoneksi.disabled = false;
+        }
+    });
+
+    function pindahKeLangkah(nomor) {
+        elStepServer.className = 'step-wizard' + (nomor === 1 ? ' aktif' : '');
+        elStepMasuk.className = 'step-wizard' + (nomor === 2 ? ' aktif' : '');
+        elDotLangkah1.className = 'dot' + (nomor === 1 ? ' aktif' : ' selesai');
+        elDotLangkah2.className = 'dot' + (nomor === 2 ? ' aktif' : '');
+        if (nomor === 2) {
+            var cfg = cfgDariFormServer();
+            elTxtServerAktif.textContent = (cfg.https ? 'https' : 'http') + '://' + cfg.host + (cfg.contextPath ? '/' + cfg.contextPath : '');
+            setTimeout(function () { elInUserid.focus(); }, 50);
+        }
+    }
+
+    elBtnLanjutKeLogin.addEventListener('click', async function () {
+        if (!sudahTesBerhasil) return;
+        try {
+            await AisApi.simpanCfg(cfgDariFormServer());
+        } catch (e) {
+            ErrorAlert.tampilkanDariException(e, 'Simpan Pengaturan Server');
+            return;
+        }
+        pindahKeLangkah(2);
+    });
+    elBtnGantiServer.addEventListener('click', function () { pindahKeLangkah(1); });
 
     elBtnMasuk.addEventListener('click', async function () {
         elLoginError.className = 'pesan-error';
-        var host = elInHost.value.trim();
-        var contextPath = elInContextPath.value.trim();
-        var https = elInHttps.checked;
         var userid = elInUserid.value.trim();
         var password = elInPassword.value;
-        if (!host || !userid || !password) {
-            elLoginError.textContent = 'Alamat server, userid, dan kata sandi wajib diisi.';
+        if (!userid || !password) {
+            elLoginError.textContent = 'Userid dan kata sandi wajib diisi.';
             elLoginError.className = 'pesan-error tampil';
             return;
         }
         elBtnMasuk.disabled = true;
         elBtnMasuk.textContent = 'Memeriksa...';
         try {
-            var r = await AisApi.login({ host: host, contextPath: contextPath, https: https }, userid, password);
+            var r = await AisApi.login(cfgDariFormServer(), userid, password);
             if (!r.ok) {
                 elLoginError.textContent = r.pesan;
                 elLoginError.className = 'pesan-error tampil';
+                if (r.error) ErrorAlert.tampilkanDariException(r.error, 'Masuk');
                 return;
             }
             await masukKeAplikasi();
+        } catch (e) {
+            // Jaring pengaman TERAKHIR -- lihat JavaDoc error-alert.js. Sebelum perbaikan ini,
+            // exception di sini hilang tanpa jejak (tombol "Masuk" reset diam-diam di `finally`,
+            // TANPA pesan apa pun) -- inilah akar penyebab bug "klik Masuk tidak merespons".
+            ErrorAlert.tampilkanDariException(e, 'Masuk');
         } finally {
             elBtnMasuk.disabled = false;
             elBtnMasuk.textContent = 'Masuk';
@@ -306,6 +412,8 @@
             } else {
                 toast('error', pesanDariHasil(r, 'Gagal membuka kas.'));
             }
+        } catch (e) {
+            ErrorAlert.tampilkanDariException(e, 'Buka Kas');
         } finally {
             elBtnSubmitBukaKas.disabled = false;
             elBtnSubmitBukaKas.textContent = 'Buka Kas & Mulai';
@@ -416,7 +524,11 @@
                 toast('error', pesanDariHasil(r, 'Pembayaran gagal.'));
             }
         } catch (e) {
-            toast('error', e.pesan || 'Gagal menghubungi server.');
+            // Checkout GAGAL diproses (bukan cuma ditolak server dgn balasan jelas, tapi exception
+            // jaringan/timeout) -- WAJIB alert detail (bukan toast sekilas) krn kasir perlu tahu
+            // PASTI apakah transaksi ini perlu diulang atau jangan (lihat kode transaksi di detail
+            // teknis utk dicek manual ke admin bila ragu).
+            ErrorAlert.tampilkanDariException(e, 'Checkout (kode: ' + kodeUnik + ')');
         } finally {
             elBtnSubmitBayar.disabled = false;
             elBtnSubmitBayar.textContent = 'Proses Pembayaran';
@@ -473,7 +585,8 @@
                 });
             });
         } catch (e) {
-            elDaftarPrinter.innerHTML = '<p style="color:var(--danger);font-size:12px;">Gagal mencari perangkat: ' + escapeHtml(e.message || e) + '</p>';
+            elDaftarPrinter.innerHTML = '<p style="color:var(--danger);font-size:12px;">Gagal mencari perangkat -- lihat detail di alert.</p>';
+            ErrorAlert.tampilkanDariException(e, 'Cari Perangkat Bluetooth');
         }
     });
 
@@ -492,7 +605,7 @@
             await EscPos.cetak(bytes);
             toast('success', 'Struk terkirim ke printer.');
         } catch (e) {
-            toast('error', 'Gagal mencetak: ' + (e.message || e) + '. Pastikan printer menyala & dalam jangkauan.');
+            ErrorAlert.tampilkanDariException(e, 'Cetak Struk Bluetooth');
         } finally {
             btn.disabled = false;
             btn.textContent = '🖨️ Cetak Struk (Bluetooth)';
@@ -511,6 +624,10 @@
             await segarkanStatus();
             await muatKatalog();
             await cekSesiKas();
+        } catch (e) {
+            tampilkanLayar('layarLogin');
+            ErrorAlert.tampilkanDariException(e, 'Memuat Aplikasi');
+            throw e;
         } finally {
             tutupMuat();
         }
@@ -527,6 +644,9 @@
             } catch (e) {
                 tutupMuat();
                 tampilkanLayar('layarLogin');
+                // ErrorAlert SUDAH ditampilkan di dalam masukKeAplikasi() sebelum exception ini
+                // dilempar ulang -- di sini cukup pastikan pengguna kembali ke layar login, bukan
+                // terjebak layar kosong.
             }
         }
     })();

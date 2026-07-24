@@ -9,22 +9,42 @@
 </head>
 <body>
 
-<!-- ==== Layar Masuk / Pengaturan Server ==== -->
+<!-- ==== Layar Masuk / Pengaturan Server (wizard 2 langkah) ==== -->
 <div class="layar aktif" id="layarLogin">
     <div class="kartu-login">
         <h1>&#128179; AIS POS Kasir</h1>
         <p class="sub">Kasir Android -- tablet &amp; HP</p>
-        <div class="pesan-error" id="loginError"></div>
 
-        <div class="field"><label>Alamat Server (host)</label><input type="text" id="inHost" placeholder="mis. sekolah.ais-app.id" autocapitalize="off" autocorrect="off"></div>
-        <div class="field"><label>Context Path</label><input type="text" id="inContextPath" placeholder="mis. ais" autocapitalize="off" autocorrect="off"></div>
-        <div class="chk-row"><input type="checkbox" id="inHttps" checked><label for="inHttps">Gunakan HTTPS</label></div>
+        <div class="langkah-dots"><span class="dot" id="dotLangkah1"></span><span class="dot" id="dotLangkah2"></span></div>
 
-        <hr class="pemisah">
-        <div class="field"><label>Userid</label><input type="text" id="inUserid" autocapitalize="off" autocorrect="off"></div>
-        <div class="field"><label>Kata Sandi</label><input type="password" id="inPassword"></div>
+        <!-- ---- Langkah 1: Pengaturan Server ---- -->
+        <div class="step-wizard aktif" id="stepServer">
+            <div class="langkah-label">Langkah 1 dari 2 -- Pengaturan Server</div>
+            <div class="pesan-error" id="serverError"></div>
 
-        <button class="btn-utama" id="btnMasuk">Masuk</button>
+            <div class="field"><label>Alamat Server (host)</label><input type="text" id="inHost" placeholder="mis. sekolah.ais-app.id" autocapitalize="off" autocorrect="off"></div>
+            <div class="field"><label>Context Path</label><input type="text" id="inContextPath" placeholder="mis. ais" autocapitalize="off" autocorrect="off"></div>
+            <div class="chk-row"><input type="checkbox" id="inHttps" checked><label for="inHttps">Gunakan HTTPS</label></div>
+
+            <div class="preview-url" id="previewUrl">https://...</div>
+
+            <div class="hasil-tes" id="hasilTes"><span class="ico">&#8987;</span><span id="hasilTesTeks"></span></div>
+
+            <button class="btn-tes" id="btnTesKoneksi">Tes Koneksi</button>
+            <button class="btn-utama" id="btnLanjutKeLogin" disabled>Lanjut &#8594;</button>
+        </div>
+
+        <!-- ---- Langkah 2: Masuk ---- -->
+        <div class="step-wizard" id="stepMasuk">
+            <div class="langkah-label">Langkah 2 dari 2 -- Masuk</div>
+            <div class="baris-server-aktif"><span class="txt" id="txtServerAktif"></span><button type="button" id="btnGantiServer">Ganti</button></div>
+            <div class="pesan-error" id="loginError"></div>
+
+            <div class="field"><label>Userid</label><input type="text" id="inUserid" autocapitalize="off" autocorrect="off"></div>
+            <div class="field"><label>Kata Sandi</label><input type="password" id="inPassword"></div>
+
+            <button class="btn-utama" id="btnMasuk">Masuk</button>
+        </div>
     </div>
 </div>
 
@@ -123,6 +143,7 @@
 <div class="layar-muat" id="layarMuat"><div class="spinner"></div><div id="txtLayarMuat">Memuat...</div></div>
 <div class="toast" id="toast"></div>
 
+<script src="error-alert.js"></script>
 <script src="escpos.js"></script>
 <script src="api.js"></script>
 <script src="app.js"></script>
