@@ -20,7 +20,29 @@
 
     var REPO_GITHUB = 'Zishof/ais-pos-kasir-android';
     var NAMA_APLIKASI = 'AIS POS Kasir Android';
-    var VERSI_APLIKASI = '1.1.0';
+    var VERSI_APLIKASI = '1.1.1';
+
+    // ==== Riwayat error lokal -- app ini TIDAK punya layar "Log Error" tersendiri spt Desktop, jadi
+    // SETIAP alert yg tampil (lihat tampilkan()) juga dicatat ke localStorage supaya kasir/admin bisa
+    // menyalin SELURUH riwayat error perangkat ini sekaligus (tombol "Salin Semua Error" di footer
+    // modal), bukan cuma error yg sedang tampil saat itu. Dibatasi BATAS_RIWAYAT baris terbaru (FIFO)
+    // supaya localStorage tidak membengkak tanpa batas.
+    var RIWAYAT_KEY = 'ais_pos_riwayat_error_v1';
+    var BATAS_RIWAYAT = 200;
+    function catatKeRiwayat(judul, teknis) {
+        try {
+            var daftar = bacaRiwayat();
+            daftar.push({ waktu: new Date().toISOString(), judul: judul, teknis: teknis });
+            if (daftar.length > BATAS_RIWAYAT) daftar = daftar.slice(daftar.length - BATAS_RIWAYAT);
+            localStorage.setItem(RIWAYAT_KEY, JSON.stringify(daftar));
+        } catch (e) { /* localStorage penuh/nonaktif -- riwayat cukup hilang, alert individual tetap tampil normal */ }
+    }
+    function bacaRiwayat() {
+        try {
+            var raw = localStorage.getItem(RIWAYAT_KEY);
+            return raw ? JSON.parse(raw) : [];
+        } catch (e) { return []; }
+    }
 
     // ==== Kamus kategori: dicocokkan dari properti terstruktur error (BUKAN menebak dari teks bebas) ====
     var KAMUS = {
@@ -94,7 +116,7 @@
             '.ea-footer{padding:10px 18px 18px;display:flex;flex-direction:column;gap:8px;}' +
             '.ea-footer button{width:100%;padding:12px;border-radius:11px;font-size:13px;font-weight:800;cursor:pointer;}' +
             '.ea-btn-ok{border:none;background:var(--primary,#2563eb);color:#fff;}' +
-            '.ea-btn-salin,.ea-btn-lapor{border:1.5px solid var(--border,#e2e8f0);background:var(--surface,#fff);color:var(--ink,#1e293b);}';
+            '.ea-btn-salin,.ea-btn-lapor,.ea-btn-salin-semua{border:1.5px solid var(--border,#e2e8f0);background:var(--surface,#fff);color:var(--ink,#1e293b);}';
         document.head.appendChild(style);
 
         el.overlay = document.createElement('div');
@@ -110,6 +132,7 @@
             '<div class="ea-footer">' +
             '<button type="button" class="ea-btn-lapor">\u{1F41B} Laporkan ke GitHub</button>' +
             '<button type="button" class="ea-btn-salin">\u{1F4CB} Salin Detail</button>' +
+            '<button type="button" class="ea-btn-salin-semua">\u{1F4DA} Salin Semua Error</button>' +
             '<button type="button" class="ea-btn-ok">Mengerti</button>' +
             '</div></div>';
         document.body.appendChild(el.overlay);
@@ -124,6 +147,7 @@
         el.btnOk = el.overlay.querySelector('.ea-btn-ok');
         el.btnTutup = el.overlay.querySelector('.ea-tutup');
         el.btnSalin = el.overlay.querySelector('.ea-btn-salin');
+        el.btnSalinSemua = el.overlay.querySelector('.ea-btn-salin-semua');
         el.btnLapor = el.overlay.querySelector('.ea-btn-lapor');
 
         function tutup() { el.overlay.className = 'ea-overlay'; }
@@ -194,6 +218,7 @@
         teksTeknisSaatIni = info.teknis || '(tidak ada detail teknis tambahan)';
         judulTeknisSaatIni = info.judul || 'Error';
         el.teknisPre.textContent = teksTeknisSaatIni;
+        catatKeRiwayat(judulTeknisSaatIni, teksTeknisSaatIni);
 
         el.overlay.className = 'ea-overlay tampil';
     }
@@ -204,6 +229,13 @@
         el._wireFooterOnce = true;
         el.btnSalin.addEventListener('click', function () {
             salinKeClipboard('[' + NAMA_APLIKASI + ' v' + VERSI_APLIKASI + '] ' + judulTeknisSaatIni + '\n\n' + teksTeknisSaatIni);
+        });
+        el.btnSalinSemua.addEventListener('click', function () {
+            var daftar = bacaRiwayat();
+            if (!daftar.length) { toastSederhana('Belum ada riwayat error tersimpan di perangkat ini.'); return; }
+            var teks = '[' + NAMA_APLIKASI + ' v' + VERSI_APLIKASI + '] Riwayat ' + daftar.length + ' error tersimpan di perangkat ini\n\n' +
+                daftar.map(function (r) { return '[' + r.waktu + '] ' + r.judul + '\n' + r.teknis; }).join('\n\n---\n\n');
+            salinKeClipboard(teks);
         });
         el.btnLapor.addEventListener('click', function () {
             var badan = '**Aplikasi:** ' + NAMA_APLIKASI + ' v' + VERSI_APLIKASI + '\n'
