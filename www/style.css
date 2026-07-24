@@ -96,6 +96,11 @@ button { font-family: inherit; -webkit-tap-highlight-color: transparent; }
 .pill-status.offline { background: var(--danger-50); color: var(--danger); }
 .pill-status .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .pill-kas { font-size: 10.5px; font-weight: 800; padding: 5px 10px; border-radius: 999px; border: none; cursor: pointer; background: var(--warning-50); color: var(--warning); flex-shrink: 0; }
+.pill-sinkron { font-size: 10.5px; font-weight: 800; padding: 5px 10px; border-radius: 999px; border: none; cursor: pointer; background: var(--primary-50); color: var(--primary); flex-shrink: 0; }
+.baris-sinkron-pending { display: flex; justify-content: space-between; gap: 8px; padding: 8px 4px; border-bottom: 1px solid var(--border); font-size: 12px; }
+.baris-sinkron-pending .kode { font-weight: 700; }
+.baris-sinkron-pending .waktu { color: var(--muted); font-size: 11px; }
+.baris-sinkron-pending .gagal { color: var(--danger); font-size: 10.5px; }
 .btn-ikon { width: 34px; height: 34px; border-radius: 9px; border: 1.5px solid var(--border); background: var(--surface); font-size: 15px; display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; }
 
 .kategori-scroll { flex-shrink: 0; display: flex; gap: 7px; padding: 9px 12px; overflow-x: auto; background: var(--surface); border-bottom: 1px solid var(--border); }

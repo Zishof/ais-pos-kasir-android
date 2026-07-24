@@ -222,6 +222,76 @@
         tampilkanLayar('layarLogin');
     });
 
+    // =====================================================================
+    // ==== Sinkronisasi Offline-First ====
+    // =====================================================================
+    var elPillSinkron = document.getElementById('pillSinkron');
+    var elTxtSinkronSingkat = document.getElementById('txtSinkronSingkat');
+    var elOverlaySinkron = document.getElementById('overlaySinkron');
+    var elBtnTutupSinkron = document.getElementById('btnTutupSinkron');
+    var elSinkronRingkas = document.getElementById('sinkronRingkas');
+    var elDaftarSinkronPending = document.getElementById('daftarSinkronPending');
+    var elBtnSinkronSekarang = document.getElementById('btnSinkronSekarang');
+
+    /** Segarkan lencana jumlah transaksi menunggu sinkron di topbar -- dipanggil berkala + stlh checkout/sinkron. */
+    async function segarkanBadgeSinkron() {
+        try {
+            var jumlah = await OfflineQueue.hitungPending();
+            if (jumlah > 0) {
+                elPillSinkron.style.display = 'inline-flex';
+                elTxtSinkronSingkat.textContent = jumlah + ' menunggu';
+            } else {
+                elPillSinkron.style.display = 'none';
+            }
+        } catch (e) { /* IndexedDB gagal -- diamkan, bukan fitur inti */ }
+    }
+
+    async function renderModalSinkron() {
+        try {
+            var daftar = await OfflineQueue.listPending();
+            if (daftar.length === 0) {
+                elSinkronRingkas.textContent = 'Semua transaksi sudah tersinkron -- tidak ada yang menunggu.';
+                elDaftarSinkronPending.innerHTML = '';
+                return;
+            }
+            elSinkronRingkas.textContent = daftar.length + ' transaksi tersimpan lokal, menunggu dikirim ke server.';
+            elDaftarSinkronPending.innerHTML = daftar.map(function (row) {
+                var waktu = '-';
+                try { waktu = new Date(row.waktu).toLocaleString('id-ID'); } catch (e2) { /* abaikan */ }
+                return '<div class="baris-sinkron-pending"><div><div class="kode">' + escapeHtml(row.clientTrxId) + '</div><div class="waktu">' + escapeHtml(waktu) + '</div></div>'
+                    + '<div>' + formatRupiah(row.total) + (row.pesanError ? '<div class="gagal">' + escapeHtml(row.pesanError) + '</div>' : '') + '</div></div>';
+            }).join('');
+        } catch (e) {
+            elSinkronRingkas.textContent = 'Gagal membaca antrean lokal: ' + (e && e.message ? e.message : e);
+        }
+    }
+
+    elPillSinkron.addEventListener('click', async function () {
+        elOverlaySinkron.classList.add('tampil');
+        await renderModalSinkron();
+    });
+    elBtnTutupSinkron.addEventListener('click', function () { elOverlaySinkron.classList.remove('tampil'); });
+
+    elBtnSinkronSekarang.addEventListener('click', async function () {
+        elBtnSinkronSekarang.disabled = true;
+        elBtnSinkronSekarang.textContent = 'Menyinkronkan...';
+        try {
+            var hasil = await OfflineQueue.sinkronkanSemua();
+            if (hasil.ok) {
+                toast('success', hasil.berhasil + ' transaksi tersinkron' + (hasil.gagal > 0 ? ', ' + hasil.gagal + ' ditolak server (lihat detail).' : '.'));
+            } else {
+                toast('info', hasil.pesan || 'Sinkronisasi belum bisa dilakukan.');
+            }
+            await renderModalSinkron();
+            await segarkanBadgeSinkron();
+        } catch (e) {
+            toast('error', 'Gagal sinkronisasi: ' + (e && e.message ? e.message : e));
+        } finally {
+            elBtnSinkronSekarang.disabled = false;
+            elBtnSinkronSekarang.textContent = 'Sinkronkan Sekarang';
+        }
+    });
+
     async function segarkanStatus() {
         try {
             var r = await AisApi.panggil('konfigurasi', {});
@@ -238,6 +308,7 @@
             elPillStatus.className = 'pill-status offline';
             elTxtStatus.textContent = 'Offline';
         }
+        segarkanBadgeSinkron();
     }
 
     // =====================================================================
@@ -833,30 +904,54 @@
 
         elBtnSubmitBayar.disabled = true;
         elBtnSubmitBayar.textContent = 'Memproses...';
+        // Offline-first (pola SAMA dgn local-db.js Desktop/ais_pos_offline.js web): tulis transaksi
+        // ke antrean lokal SEBELUM mencoba kirim -- kalau koneksi putus TEPAT SETELAH tombol ini
+        // diklik, transaksi tetap aman tersimpan di perangkat, bukan hilang. Metode "Saldo" SENGAJA
+        // dikecualikan (sudah ditolak lebih dulu via gerbangSaldoDanPin bila offline -- saldo real-time
+        // wajib dicek server, tidak aman dijamin dari cache/antrean lokal).
+        try { await OfflineQueue.simpanBaru(payload); } catch (eSimpanLokal) { /* gagal tulis lokal -- lanjut coba kirim langsung, jangan gagalkan alur */ }
+        var dariAntreanOffline = false;
         try {
-            var r = await AisApi.panggil('bayar', payload);
+            var r;
+            try {
+                r = await AisApi.panggil('bayar', payload);
+            } catch (eJaringan) {
+                if (eJaringan && (eJaringan.offline || eJaringan.timeout) && !pakaiSaldo) {
+                    // Tidak ada koneksi/timeout -- transaksi SUDAH aman di antrean lokal (baris di atas),
+                    // akan disinkronkan otomatis begitu koneksi pulih. Bukan kegagalan bagi kasir.
+                    dariAntreanOffline = true;
+                    r = { status: 'success' };
+                } else {
+                    throw eJaringan;
+                }
+            }
             if (r.status === 'success') {
+                if (!dariAntreanOffline) { try { await OfflineQueue.tandaiSinkron(kodeUnik); } catch (e3) { /* abaikan */ } }
                 strukTerakhir = {
                     tokoNama: state.tokoNama, kode: kodeUnik, waktu: sekarang.toLocaleString('id-ID'),
                     kasir: state.userId, metode: state.metodeTerpilih.nama,
                     items: state.cart.map(function (c) { return { nama: c.nama, jumlah: c.jumlah, harga: c.harga }; }),
                     subtotal: subtotal, total: subtotal, diterima: diterima, kembalian: kembalian
                 };
-                document.getElementById('txtRingkasSukses').textContent = formatRupiah(subtotal) + ' -- ' + state.metodeTerpilih.nama;
+                document.getElementById('txtRingkasSukses').textContent = formatRupiah(subtotal) + ' -- ' + state.metodeTerpilih.nama
+                    + (dariAntreanOffline ? ' (tersimpan offline, menunggu sinkron)' : '');
                 elOverlayBayar.classList.remove('tampil');
                 document.getElementById('overlaySukses').classList.add('tampil');
                 state.cart = [];
                 renderKeranjang();
                 resetMemberTerpilih();
-                muatKatalog(); // stok berubah -- muat ulang supaya badge stok akurat
+                segarkanBadgeSinkron();
+                if (!dariAntreanOffline) muatKatalog(); // stok berubah -- muat ulang supaya badge stok akurat (dilewati saat offline, toh tak terjangkau)
             } else {
+                if (r.kode === 'DUPLIKAT_KODE_TRANSAKSI') { try { await OfflineQueue.tandaiSinkron(kodeUnik); } catch (e4) { /* abaikan */ } }
                 toast('error', pesanDariHasil(r, 'Pembayaran gagal.'));
             }
         } catch (e) {
-            // Checkout GAGAL diproses (bukan cuma ditolak server dgn balasan jelas, tapi exception
-            // jaringan/timeout) -- WAJIB alert detail (bukan toast sekilas) krn kasir perlu tahu
-            // PASTI apakah transaksi ini perlu diulang atau jangan (lihat kode transaksi di detail
-            // teknis utk dicek manual ke admin bila ragu).
+            // Checkout GAGAL diproses krn DITOLAK server dgn tegas (bukan soal koneksi -- itu sudah
+            // ditangani di atas sbg antrean offline) -- WAJIB alert detail (bukan toast sekilas) krn
+            // kasir perlu tahu PASTI apakah transaksi ini perlu diulang atau jangan (lihat kode
+            // transaksi di detail teknis utk dicek manual ke admin bila ragu; baris di antrean lokal
+            // TETAP PENDING, bisa dicoba lagi via "Sinkronkan Sekarang" setelah masalah teratasi).
             ErrorAlert.tampilkanDariException(e, 'Checkout (kode: ' + kodeUnik + ')');
         } finally {
             elBtnSubmitBayar.disabled = false;
@@ -962,6 +1057,8 @@
         }
         setInterval(segarkanStatus, 30000);
         if (window.AisUpdater) window.AisUpdater.cekUpdate();
+        if (window.OfflineQueue) window.OfflineQueue.mulaiAutoSync();
+        segarkanBadgeSinkron();
     }
 
     (async function start() {
