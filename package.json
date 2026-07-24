@@ -1,0 +1,22 @@
+{
+  "name": "ais-pos-kasir-android",
+  "version": "1.0.0",
+  "description": "AIS POS Kasir - aplikasi Android (tablet/HP) untuk kasir kantin/koperasi, responsif, cetak struk via Bluetooth (ESC/POS). Klien ke-3 dari backend PosApi.java yang sama dengan Kasir Desktop (Electron).",
+  "private": true,
+  "scripts": {
+    "sync": "cap sync android",
+    "open:android": "cap open android",
+    "build:debug": "cd android && ./gradlew.bat assembleDebug",
+    "build:release": "cd android && ./gradlew.bat assembleRelease"
+  },
+  "dependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/app": "^6.0.2",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/preferences": "^6.0.3",
+    "cordova-plugin-bluetooth-serial": "^0.4.7"
+  },
+  "devDependencies": {
+    "@capacitor/cli": "^6.2.0"
+  }
+}

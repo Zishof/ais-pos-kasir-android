@@ -1,0 +1,8 @@
+{
+  "appId": "id.ecampus.ais.pos.android",
+  "appName": "AIS POS Kasir",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true
+  }
+}

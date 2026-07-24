@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https: http:; connect-src *;">
+<title>AIS POS Kasir</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ==== Layar Masuk / Pengaturan Server ==== -->
+<div class="layar aktif" id="layarLogin">
+    <div class="kartu-login">
+        <h1>&#128179; AIS POS Kasir</h1>
+        <p class="sub">Kasir Android -- tablet &amp; HP</p>
+        <div class="pesan-error" id="loginError"></div>
+
+        <div class="field"><label>Alamat Server (host)</label><input type="text" id="inHost" placeholder="mis. sekolah.ais-app.id" autocapitalize="off" autocorrect="off"></div>
+        <div class="field"><label>Context Path</label><input type="text" id="inContextPath" placeholder="mis. ais" autocapitalize="off" autocorrect="off"></div>
+        <div class="chk-row"><input type="checkbox" id="inHttps" checked><label for="inHttps">Gunakan HTTPS</label></div>
+
+        <hr class="pemisah">
+        <div class="field"><label>Userid</label><input type="text" id="inUserid" autocapitalize="off" autocorrect="off"></div>
+        <div class="field"><label>Kata Sandi</label><input type="password" id="inPassword"></div>
+
+        <button class="btn-utama" id="btnMasuk">Masuk</button>
+    </div>
+</div>
+
+<!-- ==== Layar Kasir Utama ==== -->
+<div class="layar" id="layarPos">
+    <div class="topbar">
+        <div>
+            <div class="brand">AIS POS Kasir</div>
+            <div class="toko" id="txtNamaToko">-</div>
+        </div>
+        <div class="spacer"></div>
+        <span class="pill-status offline" id="pillStatus"><span class="dot"></span><span id="txtStatus">Memeriksa...</span></span>
+        <button class="btn-ikon" id="btnPrinter" title="Printer Bluetooth">&#128424;&#65039;</button>
+        <button class="btn-ikon" id="btnKeluar" title="Keluar">&#8630;</button>
+    </div>
+
+    <div class="kategori-scroll" id="kategoriScroll"></div>
+    <div class="search-bar"><input type="text" id="inCari" placeholder="Cari produk..."></div>
+
+    <div class="body-pos">
+        <div class="panel-produk">
+            <div class="grid-produk" id="gridProduk"></div>
+        </div>
+
+        <div class="overlay-gelap" id="overlayGelapKeranjang"></div>
+        <div class="panel-keranjang" id="panelKeranjang">
+            <div class="keranjang-kepala">
+                <h2>Keranjang</h2>
+                <button class="btn-ikon" id="btnTutupKeranjang" style="display:none;">&#10005;</button>
+            </div>
+            <div class="keranjang-list" id="keranjangList"></div>
+            <div class="keranjang-footer">
+                <div class="baris-total"><span>Subtotal</span><span id="txtSubtotal">Rp 0</span></div>
+                <div class="baris-total grand"><span>Total</span><span id="txtTotal">Rp 0</span></div>
+                <button class="btn-bayar" id="btnBuka2Bayar" disabled>Bayar</button>
+            </div>
+        </div>
+        <button class="fab-keranjang" id="fabKeranjang">
+            &#128722; <span class="lencana" id="fabJumlah">0</span>
+        </button>
+    </div>
+</div>
+
+<!-- ==== Modal: Sesi Kas (buka) ==== -->
+<div class="overlay" id="overlaySesiKas">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Buka Kas</h3></div>
+        <div class="modal-isi">
+            <p style="font-size:12.5px;color:var(--muted);margin-top:0;">Sesi kas toko ini belum dibuka. Isi modal awal untuk mulai berjualan.</p>
+            <div class="field"><label>Modal Awal (Rp)</label><input type="number" id="inModalAwal" value="0"></div>
+            <button class="btn-utama" id="btnSubmitBukaKas">Buka Kas &amp; Mulai</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Metode Pembayaran ==== -->
+<div class="overlay" id="overlayBayar">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Pembayaran</h3><button class="modal-tutup" id="btnTutupBayar">&#10005;</button></div>
+        <div class="modal-isi">
+            <div class="baris-total grand" style="margin-bottom:14px;"><span>Total</span><span id="txtTotalModalBayar">Rp 0</span></div>
+            <div class="grid-metode" id="gridMetode"></div>
+            <div class="field" id="wrapUangTunai"><label>Uang Diterima (Rp)</label><input type="number" id="inUangTunai"></div>
+            <div class="baris-total" id="wrapKembalian" style="display:none;"><span>Kembalian</span><span id="txtKembalian">Rp 0</span></div>
+            <button class="btn-bayar" id="btnSubmitBayar" disabled>Proses Pembayaran</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Sukses + Cetak ==== -->
+<div class="overlay" id="overlaySukses">
+    <div class="modal">
+        <div class="layar-sukses-cnt">
+            <div class="centang-sukses">&#10003;</div>
+            <h3 style="margin:0 0 4px;">Transaksi Berhasil</h3>
+            <p style="color:var(--muted);font-size:12.5px;margin:0 0 18px;" id="txtRingkasSukses"></p>
+            <button class="btn-utama" id="btnCetakStruk" style="margin-bottom:10px;">&#128424;&#65039; Cetak Struk (Bluetooth)</button>
+            <button class="btn-teks" id="btnTransaksiBaru">Transaksi Baru</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Printer Bluetooth ==== -->
+<div class="overlay" id="overlayPrinter">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Printer Bluetooth</h3><button class="modal-tutup" id="btnTutupPrinter">&#10005;</button></div>
+        <div class="modal-isi">
+            <p style="font-size:12px;color:var(--muted);margin-top:0;">Pastikan printer sudah di-<b>pairing</b> lewat Pengaturan Bluetooth Android terlebih dahulu, baru pilih dari daftar berikut.</p>
+            <button class="btn-utama" id="btnScanPrinter" style="margin-bottom:12px;">Cari Perangkat Ter-pairing</button>
+            <div id="daftarPrinter"></div>
+            <p style="font-size:11.5px;color:var(--faint);" id="txtPrinterAktif"></p>
+        </div>
+    </div>
+</div>
+
+<div class="layar-muat" id="layarMuat"><div class="spinner"></div><div id="txtLayarMuat">Memuat...</div></div>
+<div class="toast" id="toast"></div>
+
+<script src="escpos.js"></script>
+<script src="api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
