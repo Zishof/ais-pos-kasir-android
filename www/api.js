@@ -15,6 +15,49 @@
     var KUNCI_CFG = 'ais_pos_cfg_v1';
     var cfgCache = null;
     var token = null;
+    var tokoAktifId = null;
+
+    /**
+     * Fitur "Identitas Mesin POS" -- gap-closure "toko dgn banyak mesin POS, transaksi/pesanan harus
+     * bisa dibedakan mesin asalnya" (padanan {@code MESIN_PATH} di Desktop main.js, lihat JavaDoc di
+     * sana utk alasan lengkap). {@code idMesin} di-generate SEKALI (UUID v4, fallback hex acak bila
+     * {@code crypto.randomUUID} tak tersedia di WebView lama) dan tak pernah berubah. {@code namaMesin}
+     * diisi admin lewat layar Konfigurasi.
+     */
+    var KUNCI_MESIN = 'ais_pos_mesin_v1';
+    var mesinCache = null;
+
+    function buatIdMesinBaru() {
+        try { if (global.crypto && typeof global.crypto.randomUUID === 'function') return global.crypto.randomUUID(); } catch (e) { /* fallback di bawah */ }
+        var hex = ''; for (var i = 0; i < 32; i++) hex += Math.floor(Math.random() * 16).toString(16);
+        return hex.substr(0, 8) + '-' + hex.substr(8, 4) + '-' + hex.substr(12, 4) + '-' + hex.substr(16, 4) + '-' + hex.substr(20, 12);
+    }
+
+    async function bacaIdentitasMesin() {
+        if (mesinCache) return mesinCache;
+        var raw = null;
+        if (Preferences) { var r = await Preferences.get({ key: KUNCI_MESIN }); raw = r.value; }
+        else raw = localStorage.getItem(KUNCI_MESIN);
+        var m = raw ? JSON.parse(raw) : null;
+        if (!m || !m.idMesin) {
+            m = { idMesin: buatIdMesinBaru(), namaMesin: '' };
+            var rawBaru = JSON.stringify(m);
+            if (Preferences) await Preferences.set({ key: KUNCI_MESIN, value: rawBaru });
+            else localStorage.setItem(KUNCI_MESIN, rawBaru);
+        }
+        mesinCache = m;
+        return m;
+    }
+
+    async function simpanNamaMesin(namaMesin) {
+        var m = await bacaIdentitasMesin();
+        m = { idMesin: m.idMesin, namaMesin: String(namaMesin || '').trim() };
+        mesinCache = m;
+        var raw = JSON.stringify(m);
+        if (Preferences) await Preferences.set({ key: KUNCI_MESIN, value: raw });
+        else localStorage.setItem(KUNCI_MESIN, raw);
+        return m;
+    }
 
     async function simpanCfg(cfg) {
         cfgCache = cfg;
@@ -63,28 +106,63 @@
      * memang belum (dan tidak akan pernah) selesai.</p>
      * @param {string} action
      * @param {object} [payload]
+     * @param {number} [timeoutMs] override {@link TIMEOUT_MS} default (mis. aksi impor Excel katalog
+     *        yg bisa memproses ribuan baris sinkron di server -- 20 detik default terlalu singkat).
      * @return {Promise<object>}
      */
-    async function panggil(action, payload) {
+    async function panggil(action, payload, timeoutMs) {
         var cfg = await bacaCfg();
         if (!cfg || !cfg.host) throw Object.assign(new Error('belum-diatur'), { pesan: 'Alamat server belum diatur.' });
         var url = baseUrl(cfg) + 'PosApi';
         var headers = { 'Content-Type': 'application/json; charset=UTF-8' };
         if (token) headers['Authorization'] = 'Bearer ' + token;
-        var body = JSON.stringify(Object.assign({}, payload || {}, { action: action }));
+        var payloadKirim = payload || {};
+        if (tokoAktifId != null
+                && payloadKirim.tokoId == null && payloadKirim.id_toko == null
+                && payloadKirim.idToko == null && payloadKirim.toko_id == null) {
+            payloadKirim = Object.assign({}, payloadKirim, { tokoId: tokoAktifId });
+        }
+        // Gap-closure "banyak mesin POS satu toko" -- disisipkan di SATU titik masuk (bukan tiap
+        // pemanggil di app.js) supaya tak ada jalur checkout yg lupa menyertakannya. Lihat JavaDoc
+        // {@code lampirkanNamaMesin} Desktop main.js utk alasan lengkap (fallback ke potongan idMesin
+        // bila admin belum sempat memberi nama).
+        if (action === 'bayar' || action === 'draft_bayar') {
+            var m = await bacaIdentitasMesin();
+            var namaMesinKirim = m.namaMesin && m.namaMesin.trim() ? m.namaMesin.trim() : ('Mesin-' + m.idMesin.substr(0, 8));
+            payloadKirim = Object.assign({}, payloadKirim, { nama_mesin: namaMesinKirim });
+        }
+        var body = JSON.stringify(Object.assign({}, payloadKirim, { action: action }));
 
+        var batasWaktu = timeoutMs || TIMEOUT_MS;
         var controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
-        var timer = controller ? setTimeout(function () { controller.abort(); }, TIMEOUT_MS) : null;
+        var timer = null;
+
+        // Lapis pertahanan GANDA thd fetch() yg menggantung: {@code controller.abort()} (jalur utama,
+        // MEMBATALKAN permintaan sungguhan) DITAMBAH sebuah race Promise.race independen thd
+        // AbortController (jalur cadangan) -- kalau suatu WebView/lingkungan kebetulan tidak
+        // mendukung AbortController sama sekali ({@code typeof AbortController === 'undefined'},
+        // jarang tapi PERNAH terjadi di WebView versi lama), {@code fetch()} tanpa {@code signal} sama
+        // sekali TIDAK PUNYA batas waktu bawaan -- tanpa race ini, panggilan akan menggantung
+        // SELAMANYA persis seperti bug lapangan "Memuat katalog... tak pernah berhenti" yg pernah
+        // dilaporkan (root cause SEBENARNYA saat itu ternyata bug lain di IndexedDB, tapi celah ini
+        // tetap nyata & terpisah, jadi tetap ditutup di sini sbg pencegahan).
+        var promiseFetch = fetch(url, { method: 'POST', headers: headers, body: body, signal: controller ? controller.signal : undefined });
+        var promiseTimeout = new Promise(function (resolve, reject) {
+            timer = setTimeout(function () {
+                if (controller) controller.abort();
+                reject(Object.assign(new Error('timeout'), { __sudahDiabort: true }));
+            }, batasWaktu);
+        });
 
         var resp;
         try {
-            resp = await fetch(url, { method: 'POST', headers: headers, body: body, signal: controller ? controller.signal : undefined });
+            resp = await Promise.race([promiseFetch, promiseTimeout]);
         } catch (eJaringan) {
-            if (eJaringan && eJaringan.name === 'AbortError') {
+            if (eJaringan && (eJaringan.name === 'AbortError' || eJaringan.__sudahDiabort)) {
                 throw Object.assign(new Error('timeout'), {
                     timeout: true,
-                    pesan: 'Server tidak merespons dalam ' + Math.round(TIMEOUT_MS / 1000) + ' detik.',
-                    stack: 'AbortError (timeout ' + TIMEOUT_MS + 'ms) saat memanggil aksi "' + action + '" ke ' + url
+                    pesan: 'Server tidak merespons dalam ' + Math.round(batasWaktu / 1000) + ' detik.',
+                    stack: 'Timeout (' + batasWaktu + 'ms) saat memanggil aksi "' + action + '" ke ' + url
                 });
             }
             throw Object.assign(new Error('offline'), {
@@ -178,7 +256,35 @@
 
     async function logout() {
         try { await panggil('logout', {}); } catch (e) { /* abaikan -- logout lokal tetap jalan walau server tak terjangkau */ }
+        tokoAktifId = null;
         await hapusCfg();
+    }
+
+    function setTokoAktif(id) {
+        tokoAktifId = id == null || id === '' ? null : Number(id);
+    }
+
+    function getTokoAktif() {
+        return tokoAktifId;
+    }
+
+    /**
+     * Jembatan {@code i18n_kamus} utk modul BERSAMA {@code i18n.js} (lihat resolveFnI18nKamus di sana)
+     * -- meratakan balasan mentah {@code panggil()} ({@code {status,lang,kamus}}, lihat JavaDoc server
+     * {@code PosApi.prosesI18nKamus}) jadi bentuk {@code {ok,data:{kamus}}} yg SAMA dgn yg dikembalikan
+     * jembatan Electron ({@code window.electronAPI.posAPI.i18nKamus}), supaya {@code i18n.js} tetap
+     * SATU berkas identik lintas app (Desktop/Android) tanpa perlu tahu bentuk transport masing-masing.
+     * @param {{lang:string, teks:string[]}} payload
+     * @return {Promise<{ok:boolean, data?:{kamus:object}}>}
+     */
+    async function i18nKamus(payload) {
+        try {
+            var hasil = await panggil('i18n_kamus', payload);
+            if (hasil && hasil.status === 'success') return { ok: true, data: { kamus: hasil.kamus || {} } };
+            return { ok: false };
+        } catch (e) {
+            return { ok: false };
+        }
     }
 
     global.AisApi = {
@@ -188,6 +294,11 @@
         tesKoneksi: tesKoneksi,
         muatTokenTersimpan: muatTokenTersimpan,
         bacaCfg: bacaCfg,
-        simpanCfg: simpanCfg
+        simpanCfg: simpanCfg,
+        setTokoAktif: setTokoAktif,
+        getTokoAktif: getTokoAktif,
+        i18nKamus: i18nKamus,
+        identitasMesinBaca: bacaIdentitasMesin,
+        identitasMesinSimpan: simpanNamaMesin
     };
 })(window);

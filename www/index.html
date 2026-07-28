@@ -55,27 +55,40 @@
         <button type="button" class="btn-lihat" id="updBtnLihat">Lihat</button>
         <button type="button" class="btn-nanti" id="updBtnNanti">Nanti</button>
     </div>
-    <div class="topbar">
-        <button class="btn-ikon" id="btnMenu" title="Menu">&#9776;</button>
-        <div>
-            <div class="brand">AIS POS Kasir</div>
-            <div class="toko" id="txtNamaToko">-</div>
+    <div class="topbar topbar-pos">
+        <div class="topbar-baris1">
+            <button class="btn-ikon" id="btnMenu" title="Menu">&#9776;</button>
+            <div class="brand-wrap">
+                <div class="brand">AIS POS Kasir</div>
+                <div class="toko" id="txtNamaToko">-</div>
+                <select id="selectTokoAktif" class="pilih-toko-aktif" style="display:none;"></select>
+            </div>
+            <div class="spacer"></div>
+            <span class="pill-status offline" id="pillStatus"><span class="dot"></span><span id="txtStatus">Memeriksa...</span></span>
         </div>
-        <div class="spacer"></div>
-        <button type="button" class="pill-kas" id="pillKas" style="display:none;" title="Tutup Kas">&#128176; <span id="txtKasSingkat">-</span></button>
-        <button type="button" class="pill-sinkron" id="pillSinkron" style="display:none;" title="Status Sinkronisasi">&#128260; <span id="txtSinkronSingkat">-</span></button>
-        <span class="pill-status offline" id="pillStatus"><span class="dot"></span><span id="txtStatus">Memeriksa...</span></span>
-        <button class="btn-ikon" id="btnMember" title="Pilih Member">&#128100;</button>
-        <button class="btn-ikon" id="btnPrinter" title="Printer Bluetooth">&#128424;&#65039;</button>
-        <button class="btn-ikon" id="btnKeluar" title="Keluar">&#8630;</button>
+        <!-- Baris ke-2 gap-closure -- SENGAJA baris terpisah (bukan dipaksa 1 baris spt sebelumnya):
+             di layar HP sempit, brand+toko+status di baris 1 saja sudah nyaris penuh, jadi tombol
+             aksi (member/laci/printer/keluar + pill kas/sinkron kondisional) ditaruh di baris scroll
+             horizontal sendiri supaya TIDAK PERNAH kepotong/tersembunyi di luar layar (bug yg
+             dilaporkan). Di tablet/layar lebar otomatis tak perlu discroll krn semua muat. -->
+        <div class="topbar-baris2" id="topbarAksiPos">
+            <button type="button" class="pill-kas" id="pillKas" style="display:none;" title="Tutup Kas">&#128176; <span id="txtKasSingkat">-</span></button>
+            <button type="button" class="pill-sinkron" id="pillSinkron" style="display:none;" title="Status Sinkronisasi">&#128260; <span id="txtSinkronSingkat">-</span></button>
+            <button class="btn-ikon" id="btnMember" title="Pilih Member">&#128100;</button>
+            <button class="btn-ikon" id="btnBukaLaci" title="Buka Laci Kasir">&#128176;</button>
+            <button class="btn-ikon" id="btnPrinter" title="Printer Bluetooth">&#128424;&#65039;</button>
+            <button class="btn-ikon" id="btnKeluar" title="Keluar">&#8630;</button>
+        </div>
     </div>
 
     <div class="kategori-scroll" id="kategoriScroll"></div>
-    <div class="search-bar"><input type="text" id="inCari" placeholder="Cari produk..."></div>
+    <div class="search-bar"><input type="text" id="inCari" placeholder="Cari produk..."><button type="button" class="btn-kamera-so" id="btnKameraScanKasir" title="Scan barcode via kamera">&#128247;</button></div>
+    <div id="readerKameraKasir" style="display:none;"></div>
 
     <div class="body-pos">
         <div class="panel-produk">
             <div class="grid-produk" id="gridProduk"></div>
+            <div id="paginasiProdukKasir"></div>
         </div>
 
         <div class="overlay-gelap" id="overlayGelapKeranjang"></div>
@@ -100,8 +113,13 @@
             </div>
             <div class="keranjang-footer">
                 <div class="baris-total"><span>Subtotal</span><span id="txtSubtotal">Rp 0</span></div>
+                <div class="baris-total" id="barisTxtDiskon" style="display:none;color:var(--danger);"><span>Diskon Otomatis</span><span id="txtDiskon">- Rp 0</span></div>
+                <div class="baris-total" id="barisTxtCashback" style="display:none;color:var(--primary);"><span>Cashback Diperoleh</span><span id="txtCashback">+ Rp 0</span></div>
                 <div class="baris-total grand"><span>Total</span><span id="txtTotal">Rp 0</span></div>
-                <button class="btn-bayar" id="btnBuka2Bayar" disabled>Bayar</button>
+                <div style="display:flex;gap:8px;">
+                    <button type="button" class="btn-kecil-outline" id="btnTahanKeranjang" style="flex:0 0 auto;padding:11px 14px;" title="Simpan keranjang ini, lanjutkan nanti dari menu Keranjang Tertahan" disabled>&#128188; Tahan</button>
+                    <button class="btn-bayar" id="btnBuka2Bayar" style="flex:1;" disabled>Bayar</button>
+                </div>
             </div>
         </div>
         <button class="fab-keranjang" id="fabKeranjang">
@@ -118,12 +136,30 @@
             <div class="toko" id="drawerNamaToko">-</div>
         </div>
         <nav class="drawer-nav">
-            <button type="button" class="drawer-item aktif" data-layar="layarPos">&#128179; <span>Kasir</span></button>
-            <button type="button" class="drawer-item" data-layar="layarRingkasan">&#128202; <span>Ringkasan</span></button>
-            <button type="button" class="drawer-item" data-layar="layarRiwayatSinkron">&#128260; <span>Riwayat Sinkronisasi</span></button>
-            <button type="button" class="drawer-item" data-layar="layarLogError">&#128721; <span>Log Error</span></button>
+            <button type="button" class="drawer-item aktif" data-layar="layarPos">&#128179; <span data-i18n="Kasir">Kasir</span></button>
+            <button type="button" class="drawer-item" data-layar="layarPelanggan">&#128250; <span data-i18n="Layar Pelanggan">Layar Pelanggan</span></button>
+            <button type="button" class="drawer-item" data-layar="layarRingkasan">&#128202; <span data-i18n="Ringkasan">Ringkasan</span></button>
+            <button type="button" class="drawer-item" data-layar="layarPesananOnline">&#128717;&#65039; <span data-i18n="Pesanan Online">Pesanan Online</span><span class="badge-notif" id="badgePesananBaru" style="display:none;"></span></button>
+            <button type="button" class="drawer-item" data-layar="layarKeranjangTertahan">&#128188; <span data-i18n="Keranjang Tertahan">Keranjang Tertahan</span></button>
+            <button type="button" class="drawer-item" data-layar="layarLaporanTransaksi">&#128203; <span data-i18n="Laporan Transaksi">Laporan Transaksi</span></button>
+            <button type="button" class="drawer-item" data-layar="layarAnggota">&#128100; <span data-i18n="Customer/Anggota">Customer/Anggota</span></button>
+            <button type="button" class="drawer-item" id="drawerItemProduk" data-layar="layarProduk">&#128230; <span data-i18n="Produk">Produk</span></button>
+            <button type="button" class="drawer-item" data-layar="layarKulakan">&#128722; <span data-i18n="Kulakan">Kulakan</span></button>
+            <button type="button" class="drawer-item" data-layar="layarStokOpname">&#128203; <span data-i18n="Stok Opname">Stok Opname</span></button>
+            <button type="button" class="drawer-item" data-layar="layarAturanDiskon">&#127991;&#65039; <span data-i18n="Aturan Diskon">Aturan Diskon</span></button>
+            <button type="button" class="drawer-item" data-layar="layarLaporanKatalog">&#128194; <span data-i18n="Laporan-Laporan">Laporan-Laporan</span></button>
+            <button type="button" class="drawer-item" data-layar="layarRiwayatSinkron">&#128260; <span data-i18n="Riwayat Sinkronisasi">Riwayat Sinkronisasi</span></button>
+            <button type="button" class="drawer-item" data-layar="layarLogError">&#128721; <span data-i18n="Log Error">Log Error</span></button>
+            <button type="button" class="drawer-item" data-layar="layarKonfigurasi">&#9881;&#65039; <span data-i18n="Konfigurasi">Konfigurasi</span></button>
         </nav>
+        <div class="drawer-kaki" id="i18nSwitcherDrawer" style="padding:10px 14px 14px;"></div>
     </div>
+</div>
+
+<!-- ==== Layar Pelanggan (menghadap pembeli, dibuka di perangkat kedua -- lihat AisApi layar_pelanggan_kirim/ambil) ==== -->
+<div class="layar" id="layarPelanggan">
+    <button type="button" class="lp2-keluar" id="btnKeluarLayarPelanggan" title="Keluar">&#10005;</button>
+    <div class="lp2-isi" id="isiLayarPelanggan"></div>
 </div>
 
 <!-- ==== Layar Ringkasan ==== -->
@@ -135,6 +171,671 @@
         <button class="btn-ikon" id="btnMuatUlangRingkasan" title="Muat Ulang">&#128260;</button>
     </div>
     <div class="konten-scroll" id="isiRingkasan"><div class="layar-kosong">Memuat...</div></div>
+</div>
+
+<!-- ==== Layar Pesanan Online ==== -->
+<div class="layar" id="layarPesananOnline">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackPesananOnline" title="Kembali">&#8592;</button>
+        <div class="brand" data-i18n="Pesanan Online">Pesanan Online</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnTambahPesanan" title="Tambah Pesanan">&#10133;</button>
+        <button class="btn-ikon" id="btnFilterPesananOnline" title="Filter">&#128269;&#65039;</button>
+        <button class="btn-ikon" id="btnMuatUlangPesananOnline" title="Muat Ulang">&#128260;</button>
+    </div>
+    <!-- Filter (gap-closure -- padanan filter bar JSP _draft_pesanan_anggota.jsp) + "Bayar Semua" (admin) -->
+    <div class="filter-panel" id="panelFilterPesanan">
+        <div class="grid-filter">
+            <div class="field"><label data-i18n="Mulai">Mulai</label><input type="date" id="filterPesananMulai"></div>
+            <div class="field"><label data-i18n="Akhir">Akhir</label><input type="date" id="filterPesananAkhir"></div>
+        </div>
+        <div class="field"><label data-i18n="Kode">Kode</label><input type="text" id="filterPesananKode" data-i18n-placeholder="Kode Draft" placeholder="Kode Draft"></div>
+        <div class="field"><label data-i18n="Pembeli">Pembeli</label><input type="text" id="filterPesananPembeli" data-i18n-placeholder="Nama Pembeli" placeholder="Nama Pembeli"></div>
+        <div class="field" id="wrapFilterPesananPedagang" style="display:none;"><label data-i18n="Pedagang">Pedagang</label><input type="text" id="filterPesananPedagang" data-i18n-placeholder="Nama Pedagang" placeholder="Nama Pedagang"></div>
+        <div class="aksi-filter">
+            <button type="button" class="btn-saring-aksi" id="btnSaringPesanan"><span data-i18n="Saring">Saring</span></button>
+        </div>
+        <button type="button" class="btn-bayar-semua-aksi" id="btnBayarSemuaPesanan" style="display:none;width:100%;margin-bottom:10px;">&#9989; <span data-i18n="Bayar Semua">Bayar Semua</span></button>
+        <div id="wrapProgressBayarSemuaPesanan" style="display:none;">
+            <div class="progress-track"><div class="progress-bar-isi" id="progressBayarSemuaPesananBar"></div></div>
+            <div class="progress-teks" id="progressBayarSemuaPesananTeks"></div>
+        </div>
+    </div>
+    <div class="search-bar"><input type="text" id="inCariPesananOnline" data-i18n-placeholder="Cari kode/nama pemesan..." placeholder="Cari kode/nama pemesan..."></div>
+    <div class="konten-scroll">
+        <div class="kartu-ringkas" id="infoCachePesanan" style="margin:10px 12px 0;font-size:11.5px;color:var(--muted);">Memeriksa cache lokal...</div>
+        <div class="ringkas-bar" id="panelKpiPesanan" style="margin:9px 12px 0;">
+            <div class="kartu-ringkas"><div class="label">Total Pesanan</div><div class="nilai" id="kpiTotalPesanan">0</div></div>
+            <div class="kartu-ringkas bahaya"><div class="label">Belum Lunas</div><div class="nilai" id="kpiPesananMenunggu">0</div></div>
+        </div>
+        <div id="isiPesananOnline"><div class="layar-kosong">Memuat...</div></div>
+    </div>
+</div>
+
+<!-- ==== Modal: Verifikasi Pesanan Online (pilih metode bayar) ==== -->
+<div class="overlay" id="overlayVerifikasiPesanan">
+    <div class="modal">
+        <div class="modal-kepala"><h3 data-i18n="Pilih Metode Pembayaran">Pilih Metode Pembayaran</h3><button class="modal-tutup" id="btnTutupVerifikasiPesanan">&#10005;</button></div>
+        <div class="modal-isi">
+            <div class="grid-metode" id="gridMetodePesanan"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Detail Pesanan (read-only, gap-closure -- padanan tombol "Detail"/"Monitor" JSP, dipakai KEDUA layar Pesanan Online & Keranjang Tertahan) ==== -->
+<div class="overlay" id="overlayDetailPesanan">
+    <div class="modal">
+        <div class="modal-kepala"><h3 id="judulDetailPesanan" data-i18n="Detail Pesanan">Detail Pesanan</h3><button class="modal-tutup" id="btnTutupDetailPesanan">&#10005;</button></div>
+        <div class="modal-isi" id="isiDetailPesanan"></div>
+    </div>
+</div>
+
+<!-- ==== Layar Keranjang Tertahan ==== -->
+<div class="layar" id="layarKeranjangTertahan">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackKeranjangTertahan" title="Kembali">&#8592;</button>
+        <div class="brand" data-i18n="Keranjang Tertahan">Keranjang Tertahan</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnMuatUlangKeranjangTertahan" title="Muat Ulang">&#128260;</button>
+    </div>
+    <div class="konten-scroll" id="isiKeranjangTertahan"><div class="layar-kosong">Memuat...</div></div>
+</div>
+
+<!-- ==== Layar Laporan Transaksi (Report Order/Sesi/Payment, spesifikasi klien "Flow Kasir") ==== -->
+<div class="layar" id="layarLaporanTransaksi">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackLaporanTransaksi" title="Kembali">&#8592;</button>
+        <div class="brand">Laporan Transaksi</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnSinkronTransaksiStatistik" title="Sinkronkan statistik transaksi dengan server">&#128260;</button>
+        <button class="btn-ikon" id="btnMuatUlangLaporanTransaksi" title="Muat Ulang">&#128260;</button>
+    </div>
+    <div class="kategori-scroll" id="subTabLaporanTransaksi">
+        <button type="button" class="pill-kategori aktif" data-sub="order">Order</button>
+        <button type="button" class="pill-kategori" data-sub="sesi">Sesi</button>
+        <button type="button" class="pill-kategori" data-sub="payment">Payment</button>
+    </div>
+    <div class="konten-scroll">
+        <div id="panelStatistikTransaksi">
+            <div class="kartu-ringkas" id="infoTransaksiStatistik" style="margin-bottom:9px;font-size:11.5px;color:var(--muted);">Memuat statistik...</div>
+            <div class="ringkas-bar">
+                <div class="kartu-ringkas"><div class="label">Transaksi Hari Ini</div><div class="nilai" id="kpiTrxHariIni">0</div></div>
+                <div class="kartu-ringkas"><div class="label">Omzet Hari Ini</div><div class="nilai" id="kpiOmzetHariIni" style="font-size:13px;">Rp 0</div></div>
+                <div class="kartu-ringkas"><div class="label">Transaksi 30 Hari</div><div class="nilai" id="kpiTrx30Hari">0</div></div>
+                <div class="kartu-ringkas"><div class="label">Omzet 30 Hari</div><div class="nilai" id="kpiOmzet30Hari" style="font-size:13px;">Rp 0</div></div>
+            </div>
+            <div class="kartu-ringkas" style="margin-bottom:9px;"><div class="label">Omzet per Kasir (30 hari) &mdash; siapa entry/login</div><div id="barKasirTransaksi"></div></div>
+            <div class="kartu-ringkas" style="margin-bottom:14px;"><div class="label">Omzet per Mesin POS (30 hari)</div><div id="barMesinTransaksi"></div></div>
+        </div>
+        <div id="isiLaporanTransaksi"><div class="layar-kosong">Memuat...</div></div>
+    </div>
+</div>
+
+<!-- ==== Layar Customer/Anggota (CRUD, samakan dgn manajemen anggota POS Online) ==== -->
+<div class="layar" id="layarAnggota">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackAnggota" title="Kembali">&#8592;</button>
+        <div class="brand">Customer/Anggota</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnSinkronAnggotaCache" title="Sinkronkan salinan lokal data anggota dengan server (dipakai saat offline)">&#128260;</button>
+        <button class="btn-ikon" id="btnTambahAnggota" title="Tambah Anggota">&#10133;</button>
+    </div>
+    <div class="search-bar"><input type="text" id="inCariAnggota" placeholder="Cari nama/kode/kode identitas..."></div>
+    <div class="konten-scroll">
+        <div id="panelStatistikAnggota">
+            <div class="kartu-ringkas" id="infoCacheAnggota" style="margin-bottom:9px;font-size:11.5px;color:var(--muted);">Memeriksa cache lokal...</div>
+            <div class="ringkas-bar">
+                <div class="kartu-ringkas"><div class="label">Total Anggota</div><div class="nilai" id="kpiTotalAnggota">0</div></div>
+                <div class="kartu-ringkas sukses"><div class="label">Aktif</div><div class="nilai" id="kpiAnggotaAktif">0</div></div>
+                <div class="kartu-ringkas bahaya"><div class="label">Non-Aktif</div><div class="nilai" id="kpiAnggotaNonaktif">0</div></div>
+                <div class="kartu-ringkas"><div class="label">Wajib PIN</div><div class="nilai" id="kpiAnggotaWajibPin">0</div></div>
+            </div>
+            <div class="kartu-ringkas" style="margin-bottom:14px;"><div class="label">Per Jenis Keanggotaan</div><div id="barJenisAnggota"></div></div>
+        </div>
+        <div id="isiAnggota"><div class="layar-kosong">Memuat...</div></div>
+    </div>
+</div>
+
+<!-- ==== Modal: Tambah/Ubah Anggota ==== -->
+<div class="overlay" id="overlayFormAnggota">
+    <div class="modal">
+        <div class="modal-kepala"><h3 id="judulFormAnggota">Tambah Anggota</h3><button class="modal-tutup" id="btnTutupFormAnggota">&#10005;</button></div>
+        <div class="modal-isi">
+            <div class="field"><label>Nama *</label><input type="text" id="formAnggotaNama"></div>
+            <div class="baris-2">
+                <div class="field"><label>Kode Identitas</label><input type="text" id="formAnggotaKodeIdentitas"></div>
+                <div class="field"><label>Jenis Keanggotaan</label><select id="formAnggotaJenis"><option value="">-- Tidak ditentukan --</option></select></div>
+            </div>
+            <div class="baris-2">
+                <div class="field"><label>No. HP</label><input type="text" id="formAnggotaHp"></div>
+                <div class="field"><label>Telp</label><input type="text" id="formAnggotaTelp"></div>
+            </div>
+            <div class="field"><label>Email</label><input type="email" id="formAnggotaEmail"></div>
+            <div class="field"><label>Keterangan</label><input type="text" id="formAnggotaKeterangan"></div>
+            <div class="chk-row"><input type="checkbox" id="formAnggotaAktif" checked><label for="formAnggotaAktif">Aktif</label></div>
+            <button class="btn-utama" id="btnSimpanAnggota">Simpan</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Layar Konfigurasi (Profil Toko + Akun Pedagang, khusus supervisor/admin) ==== -->
+<div class="layar" id="layarKonfigurasi">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackKonfigurasi" title="Kembali">&#8592;</button>
+        <div class="brand">Konfigurasi</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnMuatUlangKonfigurasi" title="Muat Ulang">&#128260;</button>
+    </div>
+    <div class="konten-scroll" id="isiKonfigurasi">
+        <div class="sub-judul">Identitas Mesin POS</div>
+        <p style="font-size:11px;color:var(--muted);margin:0 0 10px;">Nama perangkat ini -- dipakai membedakan transaksi/pesanan yang masuk dari HP/tablet ini vs perangkat POS lain di toko yang sama. Tersimpan LOKAL di perangkat ini saja.</p>
+        <div class="field"><label>Nama Mesin</label><input type="text" id="cfNamaMesin" placeholder="Contoh: Kasir Android 1"></div>
+        <p style="font-size:10.5px;color:var(--muted);margin:0 0 10px;">ID unik perangkat: <code id="cfIdMesin">-</code></p>
+        <button class="btn-utama" id="btnSimpanNamaMesin">Simpan Nama Mesin</button>
+
+        <div class="sub-judul" style="margin-top:22px;">Profil Toko</div>
+        <div id="wrapProfilToko">
+            <div class="field"><label>Nama Toko *</label><input type="text" id="cfNama"></div>
+            <div class="baris-2">
+                <div class="field"><label>Telp</label><input type="text" id="cfTelp"></div>
+                <div class="field"><label>Email</label><input type="email" id="cfEmail"></div>
+            </div>
+            <div class="field"><label>Alamat</label><input type="text" id="cfAlamat"></div>
+            <div class="baris-2">
+                <div class="field"><label>Kota</label><input type="text" id="cfKota"></div>
+                <div class="field"><label>Kode Pos</label><input type="text" id="cfKodePos"></div>
+            </div>
+            <div class="baris-2">
+                <div class="field"><label>Nama PIC</label><input type="text" id="cfPicNama"></div>
+                <div class="field"><label>HP PIC</label><input type="text" id="cfPicHp"></div>
+            </div>
+            <div class="baris-2">
+                <div class="field"><label>NPWP</label><input type="text" id="cfNpwp"></div>
+                <div class="field"><label>Jam Operasional</label><input type="text" id="cfJamOperasional" placeholder="Contoh: 08.00 - 21.00"></div>
+            </div>
+            <div class="field"><label>Keterangan</label><input type="text" id="cfKeterangan"></div>
+            <div class="field"><label>Ucapan Terima Kasih (Struk)</label><input type="text" id="cfPesanTerimaKasih" placeholder="Terima Kasih Telah Berbelanja, Semoga Belanja Berkah Berpahala"></div>
+            <button class="btn-utama" id="btnSimpanProfilToko" style="display:none;">Simpan Profil Toko</button>
+            <div class="layar-kosong" id="catatanAksesToko" style="display:none;padding:14px 0;">Hanya supervisor toko atau admin/manager yang dapat mengubah profil toko.</div>
+        </div>
+
+        <div class="sub-judul">Akun Saya</div>
+        <div id="wrapAkunSaya">
+            <div class="field"><label>Kata Sandi Lama</label><input type="password" id="cfPasswordLama"></div>
+            <div class="field"><label>Kata Sandi Baru (min. 6 karakter)</label><input type="password" id="cfPasswordBaru"></div>
+            <button class="btn-utama" id="btnGantiPasswordSendiri">Ganti Kata Sandi</button>
+        </div>
+
+        <div class="sub-judul" style="display:flex;align-items:center;justify-content:space-between;">
+            <span>Akun Pedagang</span>
+            <button type="button" class="btn-kecil-outline" id="btnTambahPedagang" style="display:none;">+ Tambah</button>
+        </div>
+        <div id="isiPedagang"><div class="layar-kosong">Memuat...</div></div>
+    </div>
+</div>
+
+<!-- ==== Modal: Tambah/Ubah Akun Pedagang ==== -->
+<div class="overlay" id="overlayFormPedagang">
+    <div class="modal">
+        <div class="modal-kepala"><h3 id="judulFormPedagang">Tambah Akun Pedagang</h3><button class="modal-tutup" id="btnTutupFormPedagang">&#10005;</button></div>
+        <div class="modal-isi">
+            <div class="field" id="wrapPedagangUserid"><label>Userid *</label><input type="text" id="fpUserid"></div>
+            <div class="field"><label>Nama *</label><input type="text" id="fpNama"></div>
+            <div class="field"><label id="labelPedagangPassword">Kata Sandi (min. 6 karakter)</label><input type="password" id="fpPassword"></div>
+            <div class="field"><label>Keterangan</label><input type="text" id="fpKeterangan"></div>
+            <div class="chk-row"><input type="checkbox" id="fpAktif" checked><label for="fpAktif">Aktif</label></div>
+            <div class="chk-row" id="wrapPedagangSupervisor" style="display:none;"><input type="checkbox" id="fpSupervisor"><label for="fpSupervisor">Supervisor (boleh kelola katalog produk &amp; akun pedagang lain)</label></div>
+            <div id="wrapPedagangAksesMenu" style="border-top:1px solid #e2e8f0;padding-top:8px;margin-top:2px;">
+                <label style="display:block;font-size:11px;font-weight:700;color:#64748b;margin-bottom:6px;">Hak Akses Menu (menu yang boleh dilihat akun ini -- default semua aktif)</label>
+                <div class="chk-row"><input type="checkbox" id="fpAksesKasir" checked><label for="fpAksesKasir">Kasir</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesRingkasan" checked><label for="fpAksesRingkasan">Ringkasan</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesPesanan" checked><label for="fpAksesPesanan">Pesanan Online</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesAnggota" checked><label for="fpAksesAnggota">Customer/Anggota</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesProduk" checked><label for="fpAksesProduk">Produk</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesStokOpname" checked><label for="fpAksesStokOpname">Stok Opname</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesKulakan" checked><label for="fpAksesKulakan">Kulakan</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesDiskon" checked><label for="fpAksesDiskon">Aturan Diskon</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesLaporanTransaksi" checked><label for="fpAksesLaporanTransaksi">Laporan Transaksi</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesLaporan" checked><label for="fpAksesLaporan">Laporan-Laporan</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesRiwayatSinkronisasi" checked><label for="fpAksesRiwayatSinkronisasi">Riwayat Sinkronisasi</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesLogError" checked><label for="fpAksesLogError">Log Error</label></div>
+                <div class="chk-row"><input type="checkbox" id="fpAksesKonfigurasi" checked><label for="fpAksesKonfigurasi">Konfigurasi</label></div>
+            </div>
+            <button class="btn-utama" id="btnSimpanPedagang">Simpan</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Layar Laporan-Laporan (katalog ~150 laporan, generik) ==== -->
+<div class="layar" id="layarLaporanKatalog">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackLaporanKatalog" title="Kembali">&#8592;</button>
+        <div class="brand" id="judulLaporanKatalog">Laporan-Laporan</div>
+        <div class="spacer"></div>
+    </div>
+    <div id="viewKatalogLk">
+        <div class="search-bar"><input type="text" id="cariLaporanKatalog" placeholder="Cari nama laporan..."></div>
+        <div class="konten-scroll" id="isiKatalogLk"><div class="layar-kosong">Memuat katalog...</div></div>
+    </div>
+    <div id="viewSatuLk" style="display:none;flex-direction:column;flex:1;min-height:0;">
+        <div class="konten-scroll" style="flex-shrink:0;max-height:40vh;" id="filterLk"></div>
+        <div class="konten-scroll" id="hasilLk" style="flex:1;"><div class="layar-kosong">Atur filter lalu ketuk Tampilkan.</div></div>
+    </div>
+</div>
+
+<!-- ==== Modal: Detail Penjualan (posisi fiskal, dari Report Order) ==== -->
+<div class="overlay" id="overlayDetailPenjualanLt">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Detail Penjualan</h3><button class="modal-tutup" id="btnTutupDetailPenjualanLt">&#10005;</button></div>
+        <div class="modal-isi">
+            <div class="ringkas-bar" id="ringkasFiskalLt"></div>
+            <div class="sub-judul">Item Terjual</div>
+            <div id="isiDetailPenjualanLt"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Layar Produk (Katalog Barang, khusus supervisor) ==== -->
+<div class="layar" id="layarProduk">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackProduk" title="Kembali">&#8592;</button>
+        <div class="brand">Produk</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnUnduhExcelProduk" title="Unduh Excel" style="display:none;">&#11015;&#65039;</button>
+        <button class="btn-ikon" id="btnUnggahExcelProduk" title="Unggah Excel" style="display:none;">&#11014;&#65039;</button>
+        <input type="file" id="inFileExcelProduk" accept=".xlsx" style="display:none;">
+        <button class="btn-ikon" id="btnHitungUlangStok" title="Hitung Ulang Stok" style="display:none;">&#128260;&#128230;</button>
+        <button class="btn-ikon" id="btnSinkronProdukCache" title="Sinkronkan salinan lokal katalog produk dengan server (dipakai saat offline)">&#128260;</button>
+        <button class="btn-ikon" id="btnCetakPriceTag" title="Cetak Price Tag">&#127991;&#65039;</button>
+        <button class="btn-ikon" id="btnTambahProduk" title="Tambah Produk" style="display:none;">&#10133;</button>
+    </div>
+    <div class="search-bar" id="cariProdukWrap" style="display:none;"><input type="text" id="inCariProduk" placeholder="Cari kode/nama produk..."></div>
+    <label id="wrapChkSemuaTokoProduk" style="display:none;align-items:center;gap:6px;padding:0 12px 8px;font-size:11.5px;font-weight:700;color:var(--muted);">
+        <input type="checkbox" id="chkSemuaTokoProduk"> Sertakan Toko Null (diagnostik, bukan toko lain)
+    </label>
+    <div class="konten-scroll">
+        <div id="panelStatistikProduk">
+            <div class="kartu-ringkas" id="infoCacheProduk" style="margin-bottom:9px;font-size:11.5px;color:var(--muted);">Memeriksa cache lokal...</div>
+            <div class="ringkas-bar">
+                <div class="kartu-ringkas"><div class="label">Total Produk</div><div class="nilai" id="kpiTotalProduk">0</div></div>
+                <div class="kartu-ringkas sukses"><div class="label">Aktif</div><div class="nilai" id="kpiProdukAktif">0</div></div>
+                <div class="kartu-ringkas"><div class="label">Non-Aktif</div><div class="nilai" id="kpiProdukNonaktif">0</div></div>
+                <div class="kartu-ringkas bahaya"><div class="label">Stok Habis</div><div class="nilai" id="kpiStokHabis">0</div></div>
+                <div class="kartu-ringkas bahaya"><div class="label">Stok &le;5</div><div class="nilai" id="kpiStokRendah">0</div></div>
+                <div class="kartu-ringkas"><div class="label">Nilai Stok</div><div class="nilai" id="kpiNilaiStok" style="font-size:13px;">Rp 0</div></div>
+            </div>
+            <div class="kartu-ringkas" style="margin-bottom:9px;"><div class="label">Per Kategori</div><div id="barKategoriProduk"></div></div>
+            <div class="kartu-ringkas" style="margin-bottom:9px;"><div class="label">Per Pemasok/Vendor</div><div id="barPemasokProduk"></div></div>
+            <div class="kartu-ringkas" style="margin-bottom:14px;"><div class="label">Per Rentang Harga Jual</div><div id="barHargaProduk"></div></div>
+        </div>
+        <div class="kartu-ringkas" id="panelBersihkanDuplikat" style="display:none;margin-bottom:14px;">
+            <div class="label">Bersihkan Produk Duplikat</div>
+            <p style="font-size:11px;color:var(--muted);margin:4px 0 8px;">Khusus supervisor/admin. Selalu terbatas ke toko ini. Baris yang sudah punya transaksi selalu diprioritaskan sebagai penyintas.</p>
+            <div style="display:flex;flex-direction:column;gap:6px;">
+                <button type="button" class="btn-kecil-outline" id="btnDuplikatKode">Cari Duplikat: Kode</button>
+                <button type="button" class="btn-kecil-outline" id="btnDuplikatBarcode">Cari Duplikat: Barcode</button>
+                <button type="button" class="btn-kecil-outline" id="btnDuplikatNama">Cari Duplikat: Nama</button>
+                <button type="button" class="btn-kecil-outline" id="btnDuplikatKodeBarcode">Cari Duplikat: Kode + Barcode</button>
+                <button type="button" class="btn-kecil-outline" id="btnDuplikatKodeBarcodeNama">Cari Duplikat: Kode + Barcode + Nama</button>
+            </div>
+        </div>
+        <div id="isiProduk"><div class="layar-kosong">Memuat...</div></div>
+    </div>
+</div>
+
+<!-- ==== Modal: Pratinjau/Bersihkan Produk Duplikat ==== -->
+<div class="overlay" id="overlayDuplikatProduk">
+    <div class="modal">
+        <div class="modal-kepala"><h3 id="judulDuplikatProduk">Pratinjau Produk Duplikat</h3><button class="modal-tutup" id="btnTutupDuplikatProduk">&#10005;</button></div>
+        <div class="modal-isi">
+            <div id="ringkasDuplikatProduk" style="font-size:12px;color:var(--muted);margin-bottom:10px;"></div>
+            <div id="daftarGrupDuplikat"></div>
+            <button type="button" class="btn-utama" id="btnKonfirmasiDuplikatProduk" style="display:none;margin-top:10px;">Konfirmasi &amp; Hapus Duplikat</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Cetak Price Tag / POP (gap-closure, padanan JSP barang/pricetag.jsp) ==== -->
+<div class="overlay" id="overlayPriceTag">
+    <div class="modal">
+        <div class="modal-kepala"><h3 data-i18n="Cetak Price Tag / POP">Cetak Price Tag / POP</h3><button class="modal-tutup" id="btnTutupPriceTag">&#10005;</button></div>
+        <div class="modal-isi">
+            <div class="field">
+                <input type="text" id="ptCariProduk" data-i18n-placeholder="Cari nama/kode produk..." placeholder="Cari nama/kode produk...">
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-size:11.5px;color:var(--muted);">
+                <label style="display:flex;align-items:center;gap:6px;"><input type="checkbox" id="ptPilihSemua"> <span data-i18n="Pilih semua (tampil)">Pilih semua (tampil)</span></label>
+                <span id="ptJumlahDipilih">0 dipilih</span>
+            </div>
+            <div id="ptDaftarProduk" style="max-height:220px;overflow-y:auto;margin-bottom:14px;"></div>
+
+            <div class="field">
+                <label data-i18n="Jenis Cetak">Jenis Cetak</label>
+                <select id="ptJenisCetak">
+                    <option value="pop" data-i18n="POP Besar (A2/A4/A5)">POP Besar (A2/A4/A5)</option>
+                    <option value="sticker" data-i18n="Stiker Label Warna (5 kolom)">Stiker Label Warna (5 kolom)</option>
+                    <option value="textlabel" data-i18n="Label Teks Sederhana (2 kolom)">Label Teks Sederhana (2 kolom)</option>
+                </select>
+            </div>
+            <div id="ptOpsiPop">
+                <div class="field">
+                    <label data-i18n="Ukuran Kertas">Ukuran Kertas</label>
+                    <div class="pt-ukuran-grid">
+                        <button type="button" class="pt-ukuran-btn" data-ukuran="A2">A2<span class="sub">Banner besar</span></button>
+                        <button type="button" class="pt-ukuran-btn aktif" data-ukuran="A4">A4<span class="sub">Standar POP</span></button>
+                        <button type="button" class="pt-ukuran-btn" data-ukuran="A5">A5<span class="sub">Shelving</span></button>
+                    </div>
+                </div>
+                <div class="baris-2">
+                    <div class="field"><label data-i18n="Label per Baris">Label per Baris</label>
+                        <select id="ptLabelPerHalaman">
+                            <option value="1" data-i18n="1 (besar)">1 (besar)</option>
+                            <option value="2">2</option>
+                            <option value="4">4</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            <div class="field"><label data-i18n="Salinan/Produk">Salinan/Produk</label><input type="number" id="ptCopies" min="1" max="50" value="1"></div>
+            <div class="field"><label data-i18n="Label Promo (opsional)">Label Promo (opsional)</label><input type="text" id="ptPromo" data-i18n-placeholder="mis. PROMO" placeholder="mis. PROMO"></div>
+            <div class="chk-row"><input type="checkbox" id="ptTampilBarcode" checked><label for="ptTampilBarcode" data-i18n="Tampilkan barcode">Tampilkan barcode</label></div>
+            <div class="chk-row"><input type="checkbox" id="ptTampilKode" checked><label for="ptTampilKode" data-i18n="Tampilkan kode produk">Tampilkan kode produk</label></div>
+            <div class="chk-row"><input type="checkbox" id="ptTampilToko" checked><label for="ptTampilToko" data-i18n="Tampilkan nama toko">Tampilkan nama toko</label></div>
+
+            <div id="ptCanvasWrap" style="display:none;"></div>
+
+            <button type="button" class="btn-utama" id="btnBuatPriceTag" data-i18n="Buat & Simpan Gambar">&#127991;&#65039; Buat &amp; Simpan Gambar</button>
+            <p style="font-size:10.5px;color:var(--muted);margin:8px 0 0;" data-i18n="Gambar tersimpan bisa dibuka lewat aplikasi Galeri/Berkas untuk dicetak atau dibagikan.">Gambar tersimpan bisa dibuka lewat aplikasi Galeri/Berkas untuk dicetak atau dibagikan.</p>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Tambah/Ubah Produk ==== -->
+<div class="overlay" id="overlayFormProduk">
+    <div class="modal">
+        <div class="modal-kepala"><h3 id="judulFormProduk">Tambah Produk</h3><button class="modal-tutup" id="btnTutupFormProduk">&#10005;</button></div>
+        <div class="modal-isi">
+            <div class="baris-2">
+                <div class="field"><label>Kode Produk *</label><input type="text" id="formProdukKode"></div>
+                <div class="field"><label>UPC/Barcode</label><input type="text" id="formProdukBarcode" placeholder="Opsional"></div>
+            </div>
+            <div class="field"><label>Kategori</label><select id="formProdukKategori"><option value="">-- Tanpa Kategori --</option></select></div>
+            <div class="field"><label>Nama Produk *</label><input type="text" id="formProdukNama"></div>
+            <div class="field"><label>Keterangan</label><input type="text" id="formProdukKeterangan"></div>
+            <div class="baris-2">
+                <div class="field"><label>Harga Beli (Rp)</label><input type="text" inputmode="numeric" id="formProdukHargaBeli" value="0"></div>
+                <div class="field"><label>Harga Jual (Rp)</label><input type="text" inputmode="numeric" id="formProdukHargaJual" value="0"></div>
+            </div>
+            <div class="field"><label>Stok</label><input type="text" inputmode="numeric" id="formProdukStok" value="0"></div>
+            <div class="chk-row"><input type="checkbox" id="formProdukIzinkanMinus"><label for="formProdukIzinkanMinus">Boleh Dijual Walau Stok Habis/Minus</label></div>
+            <div class="chk-row"><input type="checkbox" id="formProdukAktif" checked><label for="formProdukAktif">Aktif (tampil di layar Kasir)</label></div>
+
+            <div class="bb-seksi">
+                <div class="judul">Bahan Baku (Resep) &amp; HPP</div>
+                <p class="ket">Opsional. Bila diisi, Harga Beli di atas akan OTOMATIS ditimpa oleh total HPP hasil hitung saat disimpan.</p>
+                <div class="bb-baris-tambah">
+                    <select id="bbPilihBahan"><option value="">-- Pilih produk sbg bahan --</option></select>
+                    <input type="text" inputmode="decimal" id="bbQtyBahan" placeholder="Qty">
+                    <button type="button" class="btn-kecil-outline" id="btnTambahBahan">+ Tambah</button>
+                </div>
+                <div id="bbDaftarBahan"></div>
+                <div class="bb-total-row">
+                    <span class="label">Total HPP</span>
+                    <span style="display:flex;align-items:center;gap:10px;">
+                        <span class="nilai" id="bbTotalHpp">Rp 0</span>
+                        <button type="button" class="btn-kecil-outline" id="btnJadikanHpp">Jadikan Harga Modal</button>
+                    </span>
+                </div>
+            </div>
+
+            <button class="btn-utama" id="btnSimpanProduk">Simpan</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Laporan Impor Katalog Excel (khusus supervisor) ==== -->
+<div class="overlay" id="overlayLaporanImpor">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Laporan Impor Katalog</h3><button class="modal-tutup" id="btnTutupLaporanImpor">&#10005;</button></div>
+        <div class="modal-isi">
+            <div id="isiLaporanImpor"></div>
+            <button class="btn-kecil-outline" id="btnUnduhLaporanImpor" style="width:100%;text-align:center;margin-top:10px;padding:11px;font-size:12.5px;">&#11015;&#65039; Unduh Laporan (.txt)</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Layar Tinjau Impor Katalog (review sebelum commit, paritas dgn "Tinjau Impor Katalog" Desktop) ==== -->
+<div class="layar" id="layarTinjauImpor">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBatalTinjauImpor" title="Batal">&#10005;</button>
+        <div class="brand">Tinjau Impor Katalog</div>
+        <div class="spacer"></div>
+    </div>
+    <div class="konten-scroll">
+        <div class="lp-meta" id="ringkasTinjauImpor"></div>
+        <div id="isiTinjauImpor"></div>
+    </div>
+    <div style="flex-shrink:0;padding:10px 14px;padding-bottom:calc(10px + var(--safe-bottom));border-top:1px solid var(--border);background:var(--surface);">
+        <button class="btn-utama" id="btnSimpanTinjauImpor" style="width:100%;">Simpan &amp; Kirim</button>
+    </div>
+</div>
+<datalist id="dlKategoriImpor"></datalist>
+<datalist id="dlPemasokImpor"></datalist>
+<datalist id="dlSatuanImpor"></datalist>
+
+<!-- ==== Layar Kulakan (Harga Beli / Pengadaan Produk) ==== -->
+<div class="layar" id="layarKulakan">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackKulakan" title="Kembali">&#8592;</button>
+        <div class="brand" data-i18n="Kulakan">Kulakan</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnMuatUlangKulakan" title="Muat Ulang">&#128260;</button>
+    </div>
+    <div class="konten-scroll">
+        <div id="panelEntriKulakan">
+            <div class="field">
+                <label data-i18n="Cari Produk (barcode/kode)">Cari Produk (barcode/kode)</label>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="inBarcodeKulakan" data-i18n-placeholder="Scan atau ketik barcode/kode produk..." placeholder="Scan atau ketik barcode/kode produk...">
+                    <button type="button" class="btn-kecil-outline" id="btnCariKulakan" data-i18n="Cari">Cari</button>
+                </div>
+            </div>
+            <div class="baris-produk-item" id="kartuProdukKulakan" style="display:none;flex-direction:column;align-items:stretch;gap:0;">
+                <div class="nama" id="kulakanNamaProduk" style="font-size:14px;"></div>
+                <div class="meta" id="kulakanMetaProduk"></div>
+                <div class="baris-2" style="margin-top:10px;">
+                    <div class="field"><label data-i18n="Jumlah Masuk *">Jumlah Masuk *</label><input type="text" inputmode="decimal" id="kulakanQty"></div>
+                    <div class="field"><label data-i18n="Harga Beli Satuan (Rp) *">Harga Beli Satuan (Rp) *</label><input type="text" inputmode="decimal" id="kulakanHargaBeli"></div>
+                </div>
+                <div class="baris-2">
+                    <div class="field"><label data-i18n="Nomor Faktur">Nomor Faktur</label><input type="text" id="kulakanNomorFaktur" data-i18n-placeholder="Opsional" placeholder="Opsional"></div>
+                    <div class="field"><label data-i18n="Pemasok / Supplier">Pemasok / Supplier</label><input type="text" id="kulakanNamaSupplier" data-i18n-placeholder="Nama pemasok" placeholder="Nama pemasok"></div>
+                </div>
+                <div class="field"><label data-i18n="Keterangan">Keterangan</label><input type="text" id="kulakanKeterangan" data-i18n-placeholder="Opsional" placeholder="Opsional"></div>
+                <button type="button" class="btn-utama" id="btnSimpanKulakan" style="margin-top:6px;" data-i18n="Simpan &amp; Perbarui Stok">Simpan &amp; Perbarui Stok</button>
+            </div>
+        </div>
+
+        <div class="layar-blokir" id="blokirKulakan" style="display:none;">
+            <span class="ico">&#128274;</span>
+            <span data-i18n="Hanya supervisor toko atau admin/manager yang dapat mencatat Kulakan (Harga Beli).">Hanya supervisor toko atau admin/manager yang dapat mencatat Kulakan (Harga Beli).</span><br>
+            <span data-i18n="Riwayat di bawah ini tetap bisa dilihat siapa saja.">Riwayat di bawah ini tetap bisa dilihat siapa saja.</span>
+        </div>
+
+        <div class="sub-judul" data-i18n="Riwayat Kulakan (Barang Masuk)">Riwayat Kulakan (Barang Masuk)</div>
+        <div class="field"><input type="text" id="inCariKulakan" data-i18n-placeholder="Cari produk/faktur/supplier..." placeholder="Cari produk/faktur/supplier..."></div>
+        <div id="isiKulakan"><div class="layar-kosong">Memuat...</div></div>
+    </div>
+</div>
+
+<!-- ==== Layar Stok Opname (Hitung Fisik Stok) ==== -->
+<div class="layar" id="layarStokOpname">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackStokOpname" title="Kembali">&#8592;</button>
+        <div class="brand" data-i18n="Stok Opname">Stok Opname</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnMuatUlangStokOpname" title="Muat Ulang">&#128260;</button>
+    </div>
+    <div class="konten-scroll">
+        <div class="ringkas-bar" id="ringkasSo"></div>
+
+        <!-- ==== 3 sub-tab, gap-closure -- padanan JSP stok.jsp (Kartu Mutasi Stok/Stok Opname/SO by Scan) ==== -->
+        <div class="subtab-row">
+            <button type="button" class="subtab-btn aktif" data-subtab="dashboardSo" data-i18n="Kartu Mutasi Stok">Kartu Mutasi Stok</button>
+            <button type="button" class="subtab-btn" data-subtab="manualSo" data-i18n="Stok Opname">Stok Opname</button>
+            <button type="button" class="subtab-btn" data-subtab="scanSo" data-i18n="SO by Scan (HP/PDT)">SO by Scan (HP/PDT)</button>
+        </div>
+
+        <!-- ---- Sub-tab 1: Dashboard Mutasi Barang ---- -->
+        <div class="subtab-panel aktif" id="subtabDashboardSo">
+            <div class="field">
+                <label data-i18n="Periode">Periode</label>
+                <div class="subtab-row" id="pilihPeriodeSo">
+                    <button type="button" class="subtab-btn aktif" data-periode="today" data-i18n="Hari Ini">Hari Ini</button>
+                    <button type="button" class="subtab-btn" data-periode="week" data-i18n="Minggu Ini">Minggu Ini</button>
+                    <button type="button" class="subtab-btn" data-periode="month" data-i18n="Bulan Ini">Bulan Ini</button>
+                    <button type="button" class="subtab-btn" data-periode="semester" data-i18n="6 Bulan">6 Bulan</button>
+                    <button type="button" class="subtab-btn" data-periode="year" data-i18n="Tahun Ini">Tahun Ini</button>
+                </div>
+            </div>
+            <div class="ringkas-bar">
+                <div class="kartu-ringkas sukses"><div class="label" data-i18n="Barang Masuk">Barang Masuk</div><div class="nilai" id="kpiBarangMasukSo">0</div></div>
+                <div class="kartu-ringkas bahaya"><div class="label" data-i18n="Barang Keluar">Barang Keluar</div><div class="nilai" id="kpiBarangKeluarSo">0</div></div>
+                <div class="kartu-ringkas"><div class="label" data-i18n="Total Stok">Total Stok</div><div class="nilai" id="kpiTotalStokSo">0</div></div>
+                <div class="kartu-ringkas bahaya"><div class="label" data-i18n="Stok < 10">Stok &lt; 10</div><div class="nilai" id="kpiStokKritisSo">0</div></div>
+            </div>
+            <div class="sub-judul" data-i18n="Tren Pergerakan Barang">Tren Pergerakan Barang</div>
+            <div id="chartTrenMutasiSo"></div>
+            <div class="legenda-stack">
+                <div class="item"><span class="dot" style="background:var(--success);"></span> <span data-i18n="Masuk">Masuk</span></div>
+                <div class="item"><span class="dot" style="background:var(--danger);"></span> <span data-i18n="Keluar">Keluar</span></div>
+            </div>
+            <div class="sub-judul" data-i18n="Top 5 Barang Keluar">Top 5 Barang Keluar</div>
+            <div id="chartTop5KeluarSo"></div>
+        </div>
+
+        <!-- ---- Sub-tab 2: Stok Opname manual (existing, tidak diubah) ---- -->
+        <div class="subtab-panel" id="subtabManualSo">
+            <div id="panelEntriSo">
+                <div class="field">
+                    <label data-i18n="Scan / Cari Produk (barcode/kode)">Scan / Cari Produk (barcode/kode)</label>
+                    <div style="display:flex;gap:8px;">
+                        <input type="text" id="inBarcodeSo" data-i18n-placeholder="Scan atau ketik barcode/kode produk..." placeholder="Scan atau ketik barcode/kode produk...">
+                        <button type="button" class="btn-kecil-outline" id="btnCariSo" data-i18n="Cari">Cari</button>
+                    </div>
+                </div>
+                <div class="baris-produk-item" id="kartuProdukSo" style="display:none;flex-direction:column;align-items:stretch;gap:0;">
+                    <div class="nama" id="soNamaProduk" style="font-size:14px;"></div>
+                    <div class="meta" id="soMetaProduk"></div>
+                    <div class="baris-2" style="margin-top:10px;">
+                        <div class="field"><label data-i18n="Stok Fisik (Hasil Hitung) *">Stok Fisik (Hasil Hitung) *</label><input type="text" inputmode="decimal" id="soStokFisik"></div>
+                        <div class="field"><label data-i18n="Keterangan">Keterangan</label><input type="text" id="soKeterangan" data-i18n-placeholder="Opsional" placeholder="Opsional"></div>
+                    </div>
+                    <button type="button" class="btn-utama" id="btnSimpanSo" style="margin-top:6px;" data-i18n="Simpan Catatan">Simpan Catatan</button>
+                </div>
+            </div>
+
+            <div class="layar-blokir" id="blokirSo" style="display:none;">
+                <span class="ico">&#128274;</span>
+                <span data-i18n="Hanya supervisor toko atau admin/manager yang dapat mencatat hasil Stok Opname.">Hanya supervisor toko atau admin/manager yang dapat mencatat hasil Stok Opname.</span><br>
+                <span data-i18n="Ringkasan di atas tetap terlihat siapa saja.">Ringkasan di atas tetap terlihat siapa saja.</span>
+            </div>
+
+            <div class="sub-judul" data-i18n="Riwayat Opname Sesi Ini">Riwayat Opname Sesi Ini</div>
+            <div id="isiRiwayatSo"><div class="layar-kosong">Belum ada catatan pada sesi ini.</div></div>
+        </div>
+
+        <!-- ---- Sub-tab 3: SO by Scan (HP/PDT) -- antrean scan batch, gap-closure ---- -->
+        <div class="subtab-panel" id="subtabScanSo">
+            <div id="panelScanSo">
+                <p style="font-size:11.5px;color:var(--muted);margin:0 0 10px;" data-i18n="Scan barcode berturut-turut (scanner PDT eksternal atau kamera HP), tiap hasil masuk antrean di bawah -- sesuaikan jumlah fisik lalu simpan semua sekaligus.">Scan barcode berturut-turut (scanner PDT eksternal atau kamera HP), tiap hasil masuk antrean di bawah -- sesuaikan jumlah fisik lalu simpan semua sekaligus.</p>
+                <div style="display:flex;gap:8px;margin-bottom:12px;">
+                    <input type="text" id="inBarcodeScanSo" inputmode="none" data-i18n-placeholder="Scan atau ketik barcode, lalu Enter..." placeholder="Scan atau ketik barcode, lalu Enter...">
+                    <button type="button" class="btn-kamera-so" id="btnKameraScanSo">&#128247; <span data-i18n="Kamera">Kamera</span></button>
+                </div>
+                <div id="readerKameraScanSo" style="display:none;"></div>
+
+                <div class="stat-scan-row">
+                    <div class="stat-scan"><div class="label" data-i18n="Item Discan">Item Discan</div><div class="nilai" id="statItemScanSo">0</div></div>
+                    <div class="stat-scan lebih"><div class="label" data-i18n="Lebih (+)">Lebih (+)</div><div class="nilai" id="statLebihScanSo">0</div></div>
+                    <div class="stat-scan kurang"><div class="label" data-i18n="Kurang (-)">Kurang (-)</div><div class="nilai" id="statKurangScanSo">0</div></div>
+                    <div class="stat-scan"><div class="label" data-i18n="Selisih Bersih">Selisih Bersih</div><div class="nilai" id="statSelisihScanSo">0</div></div>
+                </div>
+                <div class="proporsi-bar" id="proporsiScanSo"></div>
+
+                <div id="isiAntreanScanSo"><div class="layar-kosong">Belum ada item discan.</div></div>
+
+                <div class="field"><label data-i18n="Keterangan (berlaku utk semua baris, opsional)">Keterangan (berlaku utk semua baris, opsional)</label><input type="text" id="ketAntreanScanSo" data-i18n-placeholder="mis. Opname rutin harian" placeholder="mis. Opname rutin harian"></div>
+                <div style="display:flex;gap:8px;margin-top:10px;">
+                    <button type="button" class="btn-kecil-outline" id="btnKosongkanAntreanScanSo" data-i18n="Kosongkan">Kosongkan</button>
+                    <button type="button" class="btn-utama" id="btnSimpanSemuaScanSo" style="flex:1;" disabled>Simpan Semua (0)</button>
+                </div>
+            </div>
+            <div class="layar-blokir" id="blokirScanSo" style="display:none;">
+                <span class="ico">&#128274;</span>
+                <span data-i18n="Hanya supervisor toko atau admin/manager yang dapat mencatat hasil Stok Opname.">Hanya supervisor toko atau admin/manager yang dapat mencatat hasil Stok Opname.</span>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Layar Aturan Diskon ==== -->
+<div class="layar" id="layarAturanDiskon">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackAturanDiskon" title="Kembali">&#8592;</button>
+        <div class="brand" data-i18n="Aturan Diskon">Aturan Diskon</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnTambahDiskon" title="Tambah Aturan" style="display:none;">&#10133;</button>
+    </div>
+    <div class="search-bar"><input type="text" id="inCariDiskon" data-i18n-placeholder="Cari nama aturan..." placeholder="Cari nama aturan..."></div>
+    <div class="konten-scroll" id="isiDiskon"><div class="layar-kosong">Memuat...</div></div>
+</div>
+
+<!-- ==== Modal: Tambah/Ubah Aturan Diskon ==== -->
+<div class="overlay" id="overlayFormDiskon">
+    <div class="modal">
+        <div class="modal-kepala"><h3 id="judulFormDiskon">Tambah Aturan Diskon</h3><button class="modal-tutup" id="btnTutupFormDiskon">&#10005;</button></div>
+        <div class="modal-isi">
+            <div class="field"><label>Nama Aturan *</label><input type="text" id="fdNamaAturan"></div>
+            <div class="field"><label>Keterangan</label><input type="text" id="fdKeterangan"></div>
+
+            <div class="chk-row"><input type="checkbox" id="fdSemuaProduk" checked><label for="fdSemuaProduk">Berlaku Untuk Semua Produk</label></div>
+            <div class="field" id="wrapDiskonKodeProduk" style="display:none;"><label>Kode Produk</label><input type="text" id="fdKodeProduk"></div>
+
+            <div class="chk-row" id="wrapDiskonSemuaToko" style="display:none;"><input type="checkbox" id="fdSemuaToko" checked><label for="fdSemuaToko">Berlaku Semua Toko (Global)</label></div>
+            <div class="field" id="wrapDiskonTokoId" style="display:none;"><label>Toko ID</label><input type="text" inputmode="numeric" id="fdTokoId"></div>
+
+            <div class="chk-row"><input type="checkbox" id="fdSemuaMember" checked><label for="fdSemuaMember">Berlaku Untuk Semua Member (Publik)</label></div>
+            <div id="wrapDiskonMember" style="display:none;">
+                <div class="baris-2">
+                    <div class="field"><label>Jenis Anggota</label><select id="fdJenisAnggota"><option value="">-- Semua --</option></select></div>
+                    <div class="field"><label>Tipe Anggota</label><select id="fdTipeAnggota"><option value="">-- Semua --</option></select></div>
+                </div>
+            </div>
+
+            <div class="sub-judul" style="margin:14px 0 6px;">Masa Berlaku</div>
+            <div class="baris-2">
+                <div class="field"><label>Mulai</label><input type="datetime-local" id="fdTanggalMulai"></div>
+                <div class="field"><label>Selesai</label><input type="datetime-local" id="fdTanggalSelesai"></div>
+            </div>
+
+            <div class="sub-judul" style="margin:14px 0 6px;">Nilai Diskon</div>
+            <div class="baris-2">
+                <div class="field"><label>Persentase (%)</label><input type="text" inputmode="decimal" id="fdPersentase" value="0"></div>
+                <div class="field"><label>Maksimal Potongan (Rp)</label><input type="text" inputmode="numeric" id="fdMaksimalPotongan" value="0"></div>
+            </div>
+            <div class="field"><label>Nominal Tetap (Rp)</label><input type="text" inputmode="numeric" id="fdNominal" value="0"></div>
+
+            <div class="sub-judul" style="margin:14px 0 6px;">Logika Eksekusi</div>
+            <div class="chk-row"><input type="radio" name="fdEksekusi" id="fdPotongLangsung" value="1" checked><label for="fdPotongLangsung">Potong Langsung di Struk</label></div>
+            <div class="chk-row"><input type="radio" name="fdEksekusi" id="fdSimpanSaldo" value="0"><label for="fdSimpanSaldo">Simpan Jadi Saldo Cashback</label></div>
+
+            <div class="chk-row"><input type="checkbox" id="fdSekaliPerHari"><label for="fdSekaliPerHari">Batas Penggunaan 1x Per Hari Per Toko</label></div>
+            <div class="chk-row"><input type="checkbox" id="fdAktif" checked><label for="fdAktif">Aktif</label></div>
+
+            <button class="btn-utama" id="btnSimpanDiskon">Simpan</button>
+        </div>
+    </div>
 </div>
 
 <!-- ==== Layar Riwayat Sinkronisasi ==== -->
@@ -265,6 +966,7 @@
             <h3 style="margin:0 0 4px;">Transaksi Berhasil</h3>
             <p style="color:var(--muted);font-size:12.5px;margin:0 0 18px;" id="txtRingkasSukses"></p>
             <button class="btn-utama" id="btnCetakStruk" style="margin-bottom:10px;">&#128424;&#65039; Cetak Struk (Bluetooth)</button>
+            <button class="btn-kecil-outline" id="btnBukaLaciSukses" style="width:100%;text-align:center;padding:11px;font-size:12.5px;margin-bottom:10px;">&#128176; Buka Laci Kasir</button>
             <button class="btn-teks" id="btnTransaksiBaru">Transaksi Baru</button>
         </div>
     </div>
@@ -289,8 +991,16 @@
 <script src="error-alert.js"></script>
 <script src="updater.js"></script>
 <script src="offline-queue.js"></script>
+<script src="import-katalog-queue.js"></script>
+<script src="produk-cache.js"></script>
+<script src="anggota-cache.js"></script>
+<script src="pesanan-cache.js"></script>
+<script src="sesi-kas-offline.js"></script>
 <script src="escpos.js"></script>
 <script src="api.js"></script>
+<script src="i18n.js"></script>
+<script src="vendor/jsbarcode.min.js"></script>
+<script src="vendor/html5-qrcode.min.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
