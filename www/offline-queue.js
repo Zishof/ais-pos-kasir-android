@@ -17,23 +17,63 @@
     'use strict';
 
     var DB_NAME = 'ais_pos_offline_v1';
+    // WAJIB SAMA PERSIS dgn DB_VERSION di sesi-kas-offline.js (database SAMA, dibagi dua berkas
+    // independen) -- lihat JavaDoc bukaDb() di bawah utk kronologi bug yg ditimbulkan saat dua versi
+    // berbeda pernah dipakai (2 vs 1) di sini.
+    var DB_VERSION = 2;
     var STORE = 'transaksi';
     var dbPromise = null;
 
+    /**
+     * SEBELUMNYA berkas ini membuka database di versi 1 (hardcoded) sedangkan {@code
+     * sesi-kas-offline.js} membuka DATABASE YANG SAMA ({@code ais_pos_offline_v1}) di versi 2 --
+     * KEDUANYA independen, tanpa saling tahu. Begitu kedua koneksi terbuka di sesi yang sama (skenario
+     * NORMAL: {@code segarkanBadgeSinkron()} @ app.js membuka koneksi v1 lewat berkas ini SEGERA
+     * setelah login, lalu {@code cekSesiKas()} membuka koneksi v2 lewat sesi-kas-offline.js beberapa
+     * saat kemudian), permintaan open v2 memicu upaya UPGRADE pada koneksi v1 yang MASIH TERBUKA --
+     * spesifikasi IndexedDB mewajibkan koneksi lama menutup diri lewat {@code onversionchange}, TAPI
+     * berkas ini TIDAK PERNAH mendaftarkan handler itu, jadi koneksi v1 tidak pernah menutup diri, dan
+     * permintaan open v2 macet di status "blocked" SELAMANYA ({@code onblocked} juga tidak ditangani
+     * di sesi-kas-offline.js) -- {@code await} pemanggilnya TIDAK PERNAH selesai, membuat SELURUH alur
+     * masuk aplikasi ({@code masukKeAplikasi} di app.js) macet permanen di "Memuat katalog..." (gejala
+     * lapangan: layar muat tak pernah hilang, TANPA error apa pun di log server, krn permintaan ke
+     * server yg seharusnya menyusul -- {@code sesi_kas_status} -- tidak pernah sempat terkirim).
+     *
+     * <p><b>Perbaikan:</b> (1) versi database DISAMAKAN dgn sesi-kas-offline.js (konstanta di atas),
+     * (2) {@code onupgradeneeded} di sini SEKARANG defensif membuat KEDUA object store (bukan cuma
+     * {@code STORE} milik berkas ini) persis seperti sesi-kas-offline.js, supaya database tetap benar
+     * lengkap terlepas dari berkas MANA yang kebetulan menjadi yang PERTAMA membuka koneksi di sesi
+     * ini, (3) {@code onversionchange} SEKARANG menutup koneksi begitu diminta upgrade dari tempat
+     * lain, dan (4) {@code onblocked} SEKARANG menolak (reject) permintaan alih-alih membiarkannya
+     * menggantung tanpa batas -- kombinasi (3)+(4) memastikan skenario serupa di masa depan (mis. versi
+     * database dinaikkan lagi nanti) GAGAL CEPAT dgn pesan jelas, bukan macet diam-diam selamanya.</p>
+     */
     function bukaDb() {
         if (dbPromise) return dbPromise;
         dbPromise = new Promise(function (resolve, reject) {
             if (!global.indexedDB) { reject(new Error('IndexedDB tidak tersedia di perangkat ini.')); return; }
-            var req = global.indexedDB.open(DB_NAME, 1);
+            var req = global.indexedDB.open(DB_NAME, DB_VERSION);
             req.onupgradeneeded = function (ev) {
                 var db = ev.target.result;
                 if (!db.objectStoreNames.contains(STORE)) {
                     var os = db.createObjectStore(STORE, { keyPath: 'clientTrxId' });
                     os.createIndex('status', 'status', { unique: false });
                 }
+                if (!db.objectStoreNames.contains('sesi_kas')) {
+                    var osSesiKas = db.createObjectStore('sesi_kas', { keyPath: 'kode' });
+                    osSesiKas.createIndex('status', 'status', { unique: false });
+                }
             };
-            req.onsuccess = function () { resolve(req.result); };
-            req.onerror = function () { reject(req.error); };
+            req.onsuccess = function () {
+                var db = req.result;
+                db.onversionchange = function () { db.close(); dbPromise = null; };
+                resolve(db);
+            };
+            req.onerror = function () { dbPromise = null; reject(req.error); };
+            req.onblocked = function () {
+                dbPromise = null;
+                reject(new Error('Basis data lokal sedang dipakai koneksi lain yang belum menutup diri -- tutup & buka ulang aplikasi.'));
+            };
         });
         return dbPromise;
     }

@@ -110,6 +110,21 @@
         return n.toLocaleString('id-ID');
     }
 
+    /**
+     * Bangun perintah "buka laci kasir" (cash drawer kick) -- perintah ESC/POS standar `ESC p m t1 t2`
+     * (`0x1B 0x70 0x00 0x19 0xFA`), SAMA PERSIS byte yang dipakai Desktop (lihat JavaDoc
+     * main.js:PS_SCRIPT_BUKA_LACI) -- gap-closure Android. Laci kasir umumnya TERSAMBUNG KE PORT RJ11
+     * DI PRINTER (bukan perangkat Bluetooth sendiri), jadi perintah ini dikirim lewat koneksi
+     * Bluetooth printer yang SAMA dipakai mencetak struk ({@link cetak}) -- tak perlu pairing/koneksi
+     * terpisah. {@code pinAlternatif=true} memakai pin-5 (`m=0x01`) utk sebagian model laci yang
+     * memakai pin berbeda dari default (pin-2, `m=0x00`).
+     * @param {boolean} [pinAlternatif]
+     * @return {Uint8Array}
+     */
+    function bangunBukaLaci(pinAlternatif) {
+        return new Uint8Array([ESC, 0x70, pinAlternatif ? 0x01 : 0x00, 0x19, 0xFA]);
+    }
+
     /** @return {boolean} true bila plugin bluetoothSerial (Cordova-compat) tersedia di runtime ini. */
     function tersedia() {
         return typeof global.bluetoothSerial !== 'undefined';
@@ -147,6 +162,7 @@
 
     global.EscPos = {
         bangunStruk: bangunStruk,
+        bangunBukaLaci: bangunBukaLaci,
         tersedia: tersedia,
         daftarPerangkat: daftarPerangkat,
         sambungkan: sambungkan,

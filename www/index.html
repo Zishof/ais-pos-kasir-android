@@ -136,21 +136,13 @@
             <div class="toko" id="drawerNamaToko">-</div>
         </div>
         <nav class="drawer-nav">
-            <button type="button" class="drawer-item aktif" data-layar="layarPos">&#128179; <span data-i18n="Kasir">Kasir</span></button>
             <button type="button" class="drawer-item" data-layar="layarPelanggan">&#128250; <span data-i18n="Layar Pelanggan">Layar Pelanggan</span></button>
-            <button type="button" class="drawer-item" data-layar="layarRingkasan">&#128202; <span data-i18n="Ringkasan">Ringkasan</span></button>
-            <button type="button" class="drawer-item" data-layar="layarPesananOnline">&#128717;&#65039; <span data-i18n="Pesanan Online">Pesanan Online</span><span class="badge-notif" id="badgePesananBaru" style="display:none;"></span></button>
             <button type="button" class="drawer-item" data-layar="layarKeranjangTertahan">&#128188; <span data-i18n="Keranjang Tertahan">Keranjang Tertahan</span></button>
-            <button type="button" class="drawer-item" data-layar="layarLaporanTransaksi">&#128203; <span data-i18n="Laporan Transaksi">Laporan Transaksi</span></button>
-            <button type="button" class="drawer-item" data-layar="layarAnggota">&#128100; <span data-i18n="Customer/Anggota">Customer/Anggota</span></button>
-            <button type="button" class="drawer-item" id="drawerItemProduk" data-layar="layarProduk">&#128230; <span data-i18n="Produk">Produk</span></button>
-            <button type="button" class="drawer-item" data-layar="layarKulakan">&#128722; <span data-i18n="Kulakan">Kulakan</span></button>
-            <button type="button" class="drawer-item" data-layar="layarStokOpname">&#128203; <span data-i18n="Stok Opname">Stok Opname</span></button>
-            <button type="button" class="drawer-item" data-layar="layarAturanDiskon">&#127991;&#65039; <span data-i18n="Aturan Diskon">Aturan Diskon</span></button>
-            <button type="button" class="drawer-item" data-layar="layarLaporanKatalog">&#128194; <span data-i18n="Laporan-Laporan">Laporan-Laporan</span></button>
-            <button type="button" class="drawer-item" data-layar="layarRiwayatSinkron">&#128260; <span data-i18n="Riwayat Sinkronisasi">Riwayat Sinkronisasi</span></button>
-            <button type="button" class="drawer-item" data-layar="layarLogError">&#128721; <span data-i18n="Log Error">Log Error</span></button>
-            <button type="button" class="drawer-item" data-layar="layarKonfigurasi">&#9881;&#65039; <span data-i18n="Konfigurasi">Konfigurasi</span></button>
+            <!-- Sisanya (Kasir, Ringkasan, Pesanan Online, dst) dirender DINAMIS oleh menu-tree.js dari
+                 pohon taksonomi server (aksi ebisnis_menu_tree) -- gap-closure dokumen
+                 STRUKTUR_MENU_LENGKAP_EBISNIS_ID.md. id="badgePesananBaru" akan disuntikkan ulang oleh
+                 menu-tree.js ke node "Daftar Pesanan" (kode kasir_pos.daftar_pesanan) saat render. -->
+            <div id="drawerTreeContainer"></div>
         </nav>
         <div class="drawer-kaki" id="i18nSwitcherDrawer" style="padding:10px 14px 14px;"></div>
     </div>
@@ -242,6 +234,141 @@
 </div>
 
 <!-- ==== Layar Laporan Transaksi (Report Order/Sesi/Payment, spesifikasi klien "Flow Kasir") ==== -->
+<!-- ==== Layar Riwayat Penjualan (cari transaksi lunas + cetak ulang struk, TERPISAH dari Laporan
+     Transaksi yang fokus analitik/rekap) ==== -->
+<!-- ==== Layar Retur Penjualan (catat barang kembali dari pelanggan) ==== -->
+<div class="layar" id="layarReturPenjualan">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackReturPenjualan" title="Kembali">&#8592;</button>
+        <div class="brand">Retur Penjualan</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnMuatUlangReturPenjualan" title="Muat Ulang">&#128260;</button>
+        <button class="btn-ikon" id="btnReturBaru" title="Retur Baru">&#10133;</button>
+    </div>
+    <div class="filter-panel tampil" id="panelFilterRetur">
+        <div class="field"><label>Cari</label><input type="text" id="rtKeyword" placeholder="Produk / nomor nota / pembeli..."></div>
+        <div class="aksi-filter">
+            <button type="button" class="btn-saring-aksi" id="btnSaringRetur">Terapkan</button>
+        </div>
+    </div>
+    <div class="konten-scroll">
+        <div id="isiReturPenjualan"><div class="layar-kosong">Memuat...</div></div>
+    </div>
+</div>
+
+<!-- ==== Modal: Langkah 1 -- Cari Transaksi Asal ==== -->
+<div class="overlay" id="overlayCariTransaksiRetur">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Cari Transaksi Asal</h3><button class="modal-tutup" id="btnTutupCariTransaksiRetur">&#10005;</button></div>
+        <div class="modal-isi">
+            <div class="field"><label>Nomor Nota / Nama Pembeli</label>
+                <div style="display:flex;gap:8px;">
+                    <input type="text" id="rtCariNota" style="flex:1;">
+                    <button class="btn-utama" id="btnCariNotaRetur" style="width:auto;padding:0 16px;">Cari</button>
+                </div>
+            </div>
+            <div id="hasilCariTransaksiRetur"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Langkah 2 -- Pilih Barang & Simpan Retur ==== -->
+<div class="overlay" id="overlayPilihBarangRetur">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Pilih Barang yang Diretur</h3><button class="modal-tutup" id="btnTutupPilihBarangRetur">&#10005;</button></div>
+        <div class="modal-isi">
+            <p style="font-size:11px;color:var(--muted);margin:0 0 10px;">Transaksi asal: <b id="labelTransaksiAsalRetur">-</b></p>
+            <div id="isiPilihBarangRetur"></div>
+            <div class="field" style="margin-top:12px;"><label>Metode Pengembalian</label>
+                <select id="rtMetodePengembalian">
+                    <option value="Tunai">Tunai</option>
+                    <option value="Saldo Member">Saldo Member</option>
+                    <option value="Tukar Barang">Tukar Barang</option>
+                    <option value="Tanpa Pengembalian">Tanpa Pengembalian (Hanya Catatan)</option>
+                </select>
+            </div>
+            <p style="font-weight:800;margin:10px 0;">Total Retur: <span id="rtTotalNilaiRetur" style="color:var(--success);">Rp 0</span></p>
+            <button class="btn-utama" id="btnSimpanRetur">Simpan Retur</button>
+        </div>
+    </div>
+</div>
+
+<!-- ==== Modal: Ubah Retur (Supervisor) ==== -->
+<div class="overlay" id="overlayUbahRetur">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Ubah Retur</h3><button class="modal-tutup" id="btnTutupUbahRetur">&#10005;</button></div>
+        <div class="modal-isi">
+            <input type="hidden" id="ubahReturId">
+            <div class="field"><label>Produk</label><input type="text" id="ubahReturProduk" disabled></div>
+            <div class="baris-2">
+                <div class="field"><label>Qty Retur</label><input type="number" id="ubahReturQty" min="0.01" step="0.01"></div>
+                <div class="field"><label>Harga Satuan</label><input type="number" id="ubahReturHarga" min="0" step="1"></div>
+            </div>
+            <div class="field"><label>Alasan</label>
+                <select id="ubahReturAlasan">
+                    <option value="Rusak">Rusak</option>
+                    <option value="Salah Ukuran/Varian">Salah Ukuran/Varian</option>
+                    <option value="Tidak Sesuai Pesanan">Tidak Sesuai Pesanan</option>
+                    <option value="Berubah Pikiran">Berubah Pikiran</option>
+                    <option value="Kadaluarsa">Kadaluarsa</option>
+                    <option value="Lainnya">Lainnya</option>
+                </select>
+            </div>
+            <div class="field"><label>Kondisi Barang</label>
+                <select id="ubahReturKondisi">
+                    <option value="Baik (Layak Jual Lagi)">Baik (Layak Jual Lagi)</option>
+                    <option value="Rusak (Tidak Layak Jual)">Rusak (Tidak Layak Jual)</option>
+                </select>
+            </div>
+            <div class="field"><label>Metode Pengembalian</label>
+                <select id="ubahReturMetode">
+                    <option value="Tunai">Tunai</option>
+                    <option value="Saldo Member">Saldo Member</option>
+                    <option value="Tukar Barang">Tukar Barang</option>
+                    <option value="Tanpa Pengembalian">Tanpa Pengembalian (Hanya Catatan)</option>
+                </select>
+            </div>
+            <div class="field"><label>Keterangan</label><textarea id="ubahReturKeterangan" rows="2"></textarea></div>
+            <button class="btn-utama" id="btnSimpanUbahRetur">Simpan Perubahan</button>
+        </div>
+    </div>
+</div>
+
+<div class="layar" id="layarRiwayatPenjualan">
+    <div class="topbar">
+        <button class="btn-ikon" id="btnBackRiwayatPenjualan" title="Kembali">&#8592;</button>
+        <div class="brand">Riwayat Penjualan</div>
+        <div class="spacer"></div>
+        <button class="btn-ikon" id="btnMuatUlangRiwayatPenjualan" title="Muat Ulang">&#128260;</button>
+    </div>
+    <div class="filter-panel tampil" id="panelFilterRp">
+        <div class="grid-filter">
+            <div class="field"><label>Dari</label><input type="date" id="rpTglMulai"></div>
+            <div class="field"><label>Sampai</label><input type="date" id="rpTglSampai"></div>
+        </div>
+        <div class="field"><label>Cari</label><input type="text" id="rpCariPembeli" placeholder="Nama pembeli / nomor nota..."></div>
+        <div class="aksi-filter">
+            <button type="button" class="btn-saring-aksi" id="btnSaringRp">Terapkan</button>
+        </div>
+    </div>
+    <div class="konten-scroll">
+        <div id="isiRiwayatPenjualan"><div class="layar-kosong">Memuat...</div></div>
+    </div>
+</div>
+
+<!-- ==== Modal: Detail Penjualan Riwayat (posisi fiskal + cetak ulang struk) ==== -->
+<div class="overlay" id="overlayDetailRp">
+    <div class="modal">
+        <div class="modal-kepala"><h3>Detail Penjualan</h3><button class="modal-tutup" id="btnTutupDetailRp">&#10005;</button></div>
+        <div class="modal-isi">
+            <div class="ringkas-bar" id="ringkasFiskalRp"></div>
+            <div class="sub-judul">Item Terjual</div>
+            <div id="isiDetailRp"></div>
+            <button class="btn-utama" id="btnCetakUlangStrukRp" style="margin-top:14px;">&#128424;&#65039; Cetak Ulang Struk</button>
+        </div>
+    </div>
+</div>
+
 <div class="layar" id="layarLaporanTransaksi">
     <div class="topbar">
         <button class="btn-ikon" id="btnBackLaporanTransaksi" title="Kembali">&#8592;</button>
@@ -484,6 +611,22 @@
 </div>
 
 <!-- ==== Modal: Pratinjau/Bersihkan Produk Duplikat ==== -->
+<!-- ==== Modal: Pilih Format Unggah/Unduh Excel (gap-closure -- file yg toko unggah biasanya HASIL
+     EKSPOR Accurate; user minta konfirmasi format dulu sebelum Unduh/Unggah) ==== -->
+<div class="overlay" id="overlayFormatImporEkspor">
+    <div class="modal">
+        <div class="modal-kepala"><h3 id="judulFormatImporEkspor">Pilih Format Excel</h3><button class="modal-tutup" id="btnTutupFormatImporEkspor">&#10005;</button></div>
+        <div class="modal-isi">
+            <p style="font-size:12px;color:var(--muted);margin:0 0 12px;">Pilih format berkas Excel yang dipakai. Format baru dapat diaktifkan/dinonaktifkan di menu Konfigurasi.</p>
+            <div id="daftarFormatImporEkspor"></div>
+            <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:14px;">
+                <button type="button" class="btn-kecil" id="btnBatalFormatImporEkspor">Batal</button>
+                <button type="button" class="btn-utama" id="btnLanjutFormatImporEkspor" style="width:auto;">Lanjutkan</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="overlay" id="overlayDuplikatProduk">
     <div class="modal">
         <div class="modal-kepala"><h3 id="judulDuplikatProduk">Pratinjau Produk Duplikat</h3><button class="modal-tutup" id="btnTutupDuplikatProduk">&#10005;</button></div>

@@ -53,4 +53,11 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" />
+
+    <!-- Kamera HP utk fitur "SO by Scan (HP/PDT)": scan barcode via kamera lewat getUserMedia
+         (html5-qrcode), gap-closure padanan JSP stok/opname_scan.jsp. WebView Capacitor otomatis
+         meneruskan permintaan getUserMedia ke izin sistem ini (lihat JavaDoc bagian kamera di app.js). -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
 </manifest>

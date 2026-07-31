@@ -49,7 +49,9 @@
     var PETA_LAYAR_AKSES = {
         layarPos: 'kasir', layarRingkasan: 'ringkasan', layarPesananOnline: 'pesanan',
         layarAnggota: 'anggota', layarProduk: 'produk', layarStokOpname: 'stokopname',
-        layarKulakan: 'kulakan', layarAturanDiskon: 'diskon', layarLaporanTransaksi: 'laporantransaksi',
+        layarKulakan: 'kulakan', layarReturPenjualan: 'returpenjualan', layarAturanDiskon: 'diskon',
+        layarRiwayatPenjualan: 'riwayatpenjualan',
+        layarLaporanTransaksi: 'laporantransaksi',
         layarLaporanKatalog: 'laporan', layarRiwayatSinkron: 'riwayatsinkronisasi',
         layarLogError: 'logerror', layarKonfigurasi: 'konfigurasi'
     };
@@ -84,6 +86,66 @@
         if (elLayarAktif && !bolehAksesLayar(elLayarAktif.id)) tampilkanLayar(elLayarAktif.id);
     }
 
+    /**
+     * Gap-closure dokumen "STRUKTUR_MENU_LENGKAP_EBISNIS_ID.md": render drawer sbg POHON collapsible
+     * dari taksonomi server (aksi ebisnis_menu_tree), MENGGANTIKAN tombol statis lama (Kasir, Ringkasan,
+     * dst -- lihat #drawerTreeContainer di index.html; "Layar Pelanggan"/"Keranjang Tertahan" TETAP
+     * statis, bukan bagian taksonomi). HANYA berisi node yg sudah punya layar sungguhan (tersedia:true
+     * di ebisnis_menu_master.json), sisanya (peta jalan modul yg belum dibangun) tidak muncul sama
+     * sekali. Dipanggil dari segarkanStatus() -- gerbang klik TETAP delegasi di .drawer-nav (lihat
+     * listener klik yg sudah diubah jadi delegasi), jadi tombol baru otomatis berfungsi tanpa
+     * re-wiring manual.
+     */
+    async function renderTreeDrawer() {
+        var elWadah = document.getElementById('drawerTreeContainer');
+        if (!elWadah) return;
+        try {
+            var r = await AisApi.panggil('ebisnis_menu_tree', { platform: 'android' });
+            if (r.status !== '00' && r.status !== 'success') return; // gagal diam -- drawer kosong lbh baik drpd nav error mentah
+            var tree = r.tree || [];
+            var html = '';
+            tree.forEach(function (n) { html += renderNodeDrawer(n); });
+            if (html.trim()) {
+                elWadah.innerHTML = html;
+                var elLayarAktif = document.querySelector('.layar.aktif');
+                if (elLayarAktif) document.querySelectorAll('.drawer-item[data-layar="' + elLayarAktif.id + '"]').forEach(function (b) { b.classList.add('aktif'); });
+            }
+        } catch (e) { /* biarkan drawer kosong -- error jaringan sementara, coba lagi saat segarkanStatus berikutnya */ }
+    }
+
+    function ikonUntukPohon(kode) {
+        if (kode.indexOf('kasir_pos') === 0) return '&#128179;';
+        if (kode.indexOf('produk_dan_harga') === 0) return '&#128230;';
+        if (kode.indexOf('pelanggan_dan_crm') === 0) return '&#128100;';
+        if (kode.indexOf('pembelian') === 0) return '&#128722;';
+        if (kode.indexOf('gudang_dan_persediaan') === 0) return '&#128203;';
+        if (kode.indexOf('produksi') === 0) return '&#127981;';
+        if (kode.indexOf('penjualan') === 0) return '&#127991;️';
+        if (kode.indexOf('keuangan_dan_akuntansi') === 0) return '&#128176;';
+        if (kode.indexOf('laporan_dan_analitik') === 0) return '&#128202;';
+        if (kode.indexOf('administrasi_sistem') === 0) return '&#9881;️';
+        return '&#128193;';
+    }
+
+    function renderLeafDrawer(node, ikon) {
+        var badge = node.kode === 'kasir_pos.daftar_pesanan' ? '<span class="badge-notif" id="badgePesananBaru" style="display:none;"></span>' : '';
+        return '<button type="button" class="drawer-item" data-layar="' + node.rute + '"><span>' + ikon + '</span> <span data-i18n="' + node.label.replace(/"/g, '&quot;') + '">' + node.label + '</span>' + badge + '</button>';
+    }
+
+    function renderNodeDrawer(node) {
+        var anak = node.children || [];
+        var ikon = ikonUntukPohon(node.kode);
+        if (anak.length === 0) {
+            return node.tersedia && node.rute ? renderLeafDrawer(node, ikon) : '';
+        }
+        var html = '<div class="drawer-group">';
+        html += '<div class="drawer-group-label"><span>' + ikon + '</span> <span data-i18n="' + node.label.replace(/"/g, '&quot;') + '">' + node.label + '</span></div>';
+        if (node.tersedia && node.rute) html += renderLeafDrawer(node, ikon);
+        anak.forEach(function (a) { html += renderNodeDrawer(a); });
+        html += '</div>';
+        return html;
+    }
+
     // ==== State ====
     var state = {
         tokoId: null, tokoNama: '', userId: '', caraBayar: [],
@@ -99,10 +161,18 @@
         supervisorPedagang: false,
         daftarToko: [],
         multiToko: false,
-        aksesMenu: null // null = belum termuat dari server (lihat bolehAksesLayar -- gagal-aman: semua menu tampil sampai konfigurasi() pertama kali berhasil)
+        aksesMenu: null, // null = belum termuat dari server (lihat bolehAksesLayar -- gagal-aman: semua menu tampil sampai konfigurasi() pertama kali berhasil)
+        aksesMenuCrud: null
     };
-    /** Gerbang tampilan layar "Produk" -- SAMA PERSIS dgn gerbang server {@code KantinHelper.produkSimpan} (admin global ATAU supervisor toko). Kasir non-supervisor tetap bisa membuka menunya, tapi hanya melihat pesan "tidak punya akses". */
-    function bolehKelolaProduk() { return state.isAdminAkun || state.supervisorPedagang; }
+    function bolehAksiMenu(kunci, aksi) {
+        if (state.isAdminAkun || state.supervisorPedagang) return true;
+        var crud = state.aksesMenuCrud && state.aksesMenuCrud[kunci];
+        if (!crud) return false;
+        if (crud.supervisor === true) return true;
+        return crud[aksi] !== false;
+    }
+    /** Gerbang tampilan layar "Produk" -- membaca supervisor toko lama ATAU CRUD/Supervisor per menu dari Tbmrole.ebisnisMenu. */
+    function bolehKelolaProduk() { return bolehAksiMenu('produk', 'update') || bolehAksiMenu('produk', 'create'); }
 
     // =====================================================================
     // ==== Layar Login -- wizard 2 langkah (Pengaturan Server -> Masuk) ====
@@ -401,8 +471,11 @@
                 state.daftarToko = r.daftarToko || [];
                 state.multiToko = !!r.multiToko || state.daftarToko.length > 1;
                 state.aksesMenu = r.aksesMenu || null;
+                state.aksesMenuCrud = r.aksesMenuCrud || null;
+                state.formatImporEkspor = r.formatImporEkspor || [];
                 AisApi.setTokoAktif(state.tokoId);
                 terapkanAksesMenuDrawer();
+                if (!state.treeDrawerDimuat) { state.treeDrawerDimuat = true; renderTreeDrawer(); }
                 elTxtNamaToko.textContent = state.tokoNama || ('Kasir - ' + state.userId);
                 renderPilihTokoAktif();
             }
@@ -1210,6 +1283,62 @@
         return 'AND' + Date.now() + Math.floor(Math.random() * 1000);
     }
 
+    /** Batas tunggu kasir utk hasil kirim transaksi ke server sebelum "Proses Pembayaran"/"Tahan"
+     * dibalas duluan -- BUKAN timeout jaringan (itu tetap TIMEOUT_MS/20 detik di api.js), murni batas
+     * SEBERAPA LAMA UI boleh menunggu sebelum kasir dapat konfirmasi. Pola SAMA PERSIS dgn Desktop
+     * main.js (prosesTransaksiPosOfflineFirst) -- gap-closure "klik Bayar/Tahan lama sekali lalu
+     * macet" (jaringan toko lambat/padat): baris SUDAH aman tersimpan lokal (OfflineQueue.simpanBaru
+     * dipanggil SEBELUM fungsi ini oleh pemanggil), jadi kasir tidak perlu menunggu jaringan utk tahu
+     * transaksinya aman. */
+    var BATAS_TUNGGU_SINKRON_TRANSAKSI_MS = 3000;
+
+    /**
+     * Kirim SATU transaksi (bayar/draft_bayar) ke server dgn batas tunggu di atas -- kalau server
+     * sempat menjawab dalam batas, hasil ASLI dikembalikan (kasir dapat konfirmasi tersinkron
+     * seketika spt biasa); kalau lewat batas, langsung dianggap {@code status:'success'} versi
+     * "offline/pending" SEMENTARA percobaan kirim yg sudah berjalan dibiarkan lanjut sendiri di latar
+     * belakang, menandai {@code OfflineQueue.tandaiSinkron} begitu benar2 selesai (kapan pun itu,
+     * idempoten kalau jalur cepat sudah menanganinya lebih dulu).
+     * @param {string} aksi 'bayar' atau 'draft_bayar'.
+     * @param {object} payload WAJIB berisi {@code clientTrxId} (kunci baris di OfflineQueue).
+     * @param {boolean} pakaiSaldo kalau true, TIDAK ada batas tunggu/fallback offline (saldo wajib
+     *        dicek real-time, sudah digerbang gerbangSaldoDanPin lebih dulu) -- await penuh spt semula.
+     * @return {Promise<{hasil:object, dariAntreanOffline:boolean}>}
+     */
+    async function kirimTransaksiDenganBatasWaktu(aksi, payload, pakaiSaldo) {
+        var clientTrxId = payload.clientTrxId;
+        var promiseKirim = AisApi.panggil(aksi, payload);
+        promiseKirim.then(function (h) {
+            if (h && (h.status === 'success' || h.status === '00')) {
+                OfflineQueue.tandaiSinkron(clientTrxId).catch(function () { /* abaikan */ });
+            }
+        }).catch(function () { /* offline/timeout -- baris tetap PENDING, dicoba lagi via "Sinkronkan"/siklus otomatis */ });
+
+        if (pakaiSaldo) {
+            return { hasil: await promiseKirim, dariAntreanOffline: false };
+        }
+
+        var selesaiDalamBatas = true;
+        var hasilRace = await Promise.race([
+            promiseKirim.catch(function (e) { return { __error: e }; }),
+            new Promise(function (resolve) {
+                setTimeout(function () { selesaiDalamBatas = false; resolve(null); }, BATAS_TUNGGU_SINKRON_TRANSAKSI_MS);
+            })
+        ]);
+
+        if (!selesaiDalamBatas) {
+            return { hasil: { status: 'success' }, dariAntreanOffline: true };
+        }
+        if (hasilRace && hasilRace.__error) {
+            var eJaringan = hasilRace.__error;
+            if (eJaringan && (eJaringan.offline || eJaringan.timeout)) {
+                return { hasil: { status: 'success' }, dariAntreanOffline: true };
+            }
+            throw eJaringan;
+        }
+        return { hasil: hasilRace, dariAntreanOffline: false };
+    }
+
     /**
      * Tombol "Tahan" -- simpan keranjang saat ini sbg draft belum-lunas (aksi {@code draft_bayar} yg
      * SAMA dipakai fitur Pesanan Online, lihat JavaDoc server {@code KantinHelper.bayar} soal parameter
@@ -1227,21 +1356,34 @@
         elBtnTahanKeranjang.disabled = true;
         var oriHtml = elBtnTahanKeranjang.innerHTML;
         elBtnTahanKeranjang.textContent = '...';
+        var kodeUnikTahan = buatKodeUnik();
         var payload = {
             id: state.draftAktifId || null,
-            kodeUnik: buatKodeUnik(),
+            kodeUnik: kodeUnikTahan,
+            clientTrxId: kodeUnikTahan,
             idToko: state.tokoId,
+            tokoId: state.tokoId,
+            kasir: state.userId,
             waktu: new Date().toISOString(),
             id_member: state.memberTerpilih ? state.memberTerpilih.id : null,
             caraBayar: idCaraBayar,
+            total: hitungRingkasanKeranjang().total,
             transaksi: state.cart.map(function (c) {
                 return { id: c.id, kode: c.kode, nama: c.nama, harga: c.harga, jumlah: c.jumlah, diskon: 0, aturanDiskon: null, cashback: 0 };
             })
         };
+        // Offline-first (pola SAMA dgn tombol "Proses Pembayaran" di bawah/Desktop main.js) -- tulis
+        // ke antrean lokal SEBELUM mencoba kirim, supaya keranjang yg ditahan tetap aman tersimpan di
+        // perangkat walau jaringan putus/lambat (SEBELUMNYA baris ini tidak ada sama sekali di sini --
+        // gap-closure, keranjang tertahan bisa hilang kalau kirim gagal sebelum sempat tersimpan).
+        try { await OfflineQueue.simpanBaru(payload); } catch (eSimpanLokal) { /* gagal tulis lokal -- lanjut coba kirim langsung, jangan gagalkan alur */ }
         try {
-            var r = await AisApi.panggil('draft_bayar', payload);
+            var percobaan = await kirimTransaksiDenganBatasWaktu('draft_bayar', payload, false);
+            var r = percobaan.hasil;
             if (r.status === 'success' || r.status === '00') {
-                toast('success', 'Keranjang ditahan -- lanjutkan lewat menu Keranjang Tertahan.');
+                toast('success', percobaan.dariAntreanOffline
+                    ? 'Keranjang tersimpan lokal, sedang dikirim ke server di latar belakang.'
+                    : 'Keranjang ditahan -- lanjutkan lewat menu Keranjang Tertahan.');
                 state.cart = [];
                 state.draftAktifId = null;
                 resetMemberTerpilih();
@@ -1299,19 +1441,12 @@
         try { await OfflineQueue.simpanBaru(payload); } catch (eSimpanLokal) { /* gagal tulis lokal -- lanjut coba kirim langsung, jangan gagalkan alur */ }
         var dariAntreanOffline = false;
         try {
-            var r;
-            try {
-                r = await AisApi.panggil('bayar', payload);
-            } catch (eJaringan) {
-                if (eJaringan && (eJaringan.offline || eJaringan.timeout) && !pakaiSaldo) {
-                    // Tidak ada koneksi/timeout -- transaksi SUDAH aman di antrean lokal (baris di atas),
-                    // akan disinkronkan otomatis begitu koneksi pulih. Bukan kegagalan bagi kasir.
-                    dariAntreanOffline = true;
-                    r = { status: 'success' };
-                } else {
-                    throw eJaringan;
-                }
-            }
+            // Gap-closure "klik Bayar lama sekali lalu macet" -- lihat JavaDoc kirimTransaksiDenganBatasWaktu.
+            // Baris SUDAH aman tersimpan lokal di atas, jadi kasir tidak pernah lagi menunggu jaringan
+            // sampai 20 detik (TIMEOUT_MS) hanya utk tahu transaksinya tersimpan.
+            var percobaan = await kirimTransaksiDenganBatasWaktu('bayar', payload, pakaiSaldo);
+            var r = percobaan.hasil;
+            dariAntreanOffline = percobaan.dariAntreanOffline;
             if (r.status === 'success') {
                 if (!dariAntreanOffline) { try { await OfflineQueue.tandaiSinkron(kodeUnik); } catch (e3) { /* abaikan */ } }
                 strukTerakhir = {
@@ -1575,8 +1710,14 @@
     elBtnMenu.addEventListener('click', bukaDrawer);
     elDrawerOverlay.addEventListener('click', function (ev) { if (ev.target === elDrawerOverlay) tutupDrawer(); });
 
-    document.querySelectorAll('.drawer-item').forEach(function (btn) {
-        btn.addEventListener('click', function () {
+    // Delegasi (BUKAN satu listener per tombol) -- gap-closure menu-tree.js: item drawer utk taksonomi
+    // ERP (Ringkasan..Konfigurasi) SEKARANG dirender ULANG secara dinamis oleh renderTreeDrawer() saat
+    // startup (menggantikan tombol statis lama di index.html satu-satu), jadi listener per-elemen lama
+    // TIDAK PERNAH terpasang ke tombol yang baru dibuat. Delegasi di elemen induk statis (`.drawer-nav`,
+    // SELALU ada) bekerja utk tombol lama MAUPUN baru tanpa perlu re-wiring manual tiap render ulang.
+    document.querySelector('.drawer-nav').addEventListener('click', function (ev) {
+        var btn = ev.target.closest('.drawer-item[data-layar]');
+        if (btn) {
             document.querySelectorAll('.drawer-item').forEach(function (b) { b.classList.remove('aktif'); });
             btn.classList.add('aktif');
             var target = btn.getAttribute('data-layar');
@@ -1587,17 +1728,19 @@
             else if (target === 'layarPelanggan') mulaiPollingLayarPelanggan();
             else if (target === 'layarPesananOnline') { tampilkanBadgePesananBaru(0); muatPesananOnline(); }
             else if (target === 'layarKeranjangTertahan') muatKeranjangTertahan();
+            else if (target === 'layarRiwayatPenjualan') muatRiwayatPenjualan();
             else if (target === 'layarLaporanTransaksi') muatLaporanTransaksi();
             else if (target === 'layarAnggota') muatDaftarAnggota();
             else if (target === 'layarProduk') muatDaftarProduk('');
             else if (target === 'layarKulakan') { renderGerbangKulakan(); muatKulakan(); }
+            else if (target === 'layarReturPenjualan') muatReturPenjualan();
             else if (target === 'layarStokOpname') muatStokOpname();
             else if (target === 'layarAturanDiskon') muatAturanDiskon();
             else if (target === 'layarKonfigurasi') muatKonfigurasiLayar();
             else if (target === 'layarLaporanKatalog') muatKatalogLk();
             else if (target === 'layarRiwayatSinkron') muatRiwayatSinkron();
             else if (target === 'layarLogError') muatLogError();
-        });
+        }
     });
 
     // ---- Notifikasi Pesanan Online Baru (Fase gap-closure Android) ----
@@ -1608,12 +1751,16 @@
     // menampilkan apa pun -- kalau tidak, tiap kali app dibuka akan membanjiri kasir dgn seluruh
     // pesanan lama yg belum diverifikasi. Badge merah muncul di item drawer "Pesanan Online" &
     // hilang saat layar itu dibuka (lihat pemanggil drawer-item di bawah).
-    var elBadgePesananBaru = document.getElementById('badgePesananBaru');
     var sejakIdPesananBaru = null;
     var jumlahPesananBaruBelumDilihat = 0;
 
+    // Dicari ULANG tiap panggilan (bukan di-cache sekali di atas) -- badge ini sekarang hidup di
+    // dalam drawer tree yang dirender ASYNC oleh menu-tree.js (mungkin belum ada di DOM saat modul
+    // ini pertama dieksekusi). Aman/murah -- getElementById dipanggil jarang (bukan per-frame).
     function tampilkanBadgePesananBaru(n) {
         jumlahPesananBaruBelumDilihat = n;
+        var elBadgePesananBaru = document.getElementById('badgePesananBaru');
+        if (!elBadgePesananBaru) return;
         if (n > 0) { elBadgePesananBaru.textContent = n > 99 ? '99+' : String(n); elBadgePesananBaru.style.display = 'inline-flex'; }
         else { elBadgePesananBaru.style.display = 'none'; }
     }
@@ -2026,7 +2173,7 @@
             var items = (p.items || []).map(function (it) { return it.nama + ' (' + it.jumlah + ')'; }).join(', ') || '-';
             var aksiSelalu = '<div class="aksi-pesanan"><button type="button" class="btn-detail-aksi" data-id="' + p.id + '">&#128203; Detail</button>'
                 + (p.lunas ? ('<button type="button" class="btn-cetak-aksi" data-id="' + p.id + '">&#128424;&#65039; Cetak</button>') : '')
-                + ((state.isAdminAkun || state.supervisorPedagang) ? ('<button type="button" class="btn-hitung-aksi" data-id="' + p.id + '">&#129518; Hitung Ulang</button>') : '')
+                + (bolehAksiMenu('pesanan', 'update') ? ('<button type="button" class="btn-hitung-aksi" data-id="' + p.id + '">&#129518; Hitung Ulang</button>') : '')
                 + '</div>';
             html += '<div class="baris-riwayat-item" data-id="' + p.id + '">'
                 + '<div class="atas"><span class="kode">' + escapeHtml(p.kode || ('#' + p.id)) + '</span>'
@@ -2040,7 +2187,7 @@
                     // Gerbang "supervisor-only" (gap-closure "edit/hapus/batal hanya supervisor") --
                     // gerbang SEBENARNYA ditegakkan server-side (PosApi.bolehSupervisorAtauAdmin di
                     // prosesBatalPesanan), ini murni UX.
-                    + ((state.isAdminAkun || state.supervisorPedagang) ? ('<button type="button" class="btn-batal-aksi" data-id="' + p.id + '">Batalkan</button>') : '') + '</div>'))
+                    + (bolehAksiMenu('pesanan', 'reject') ? ('<button type="button" class="btn-batal-aksi" data-id="' + p.id + '">Batalkan</button>') : '') + '</div>'))
                 + '</div>';
         });
         html += '<div class="paginasi-lt">'
@@ -2313,7 +2460,7 @@
         daftar.forEach(function (p) {
             var jmlItem = (p.items || []).reduce(function (s, it) { return s + (Number(it.jumlah) || 0); }, 0);
             var aksiSelalu = '<div class="aksi-pesanan"><button type="button" class="btn-detail-aksi" data-id="' + p.id + '">&#128203; Detail</button>'
-                + ((state.isAdminAkun || state.supervisorPedagang) ? ('<button type="button" class="btn-hitung-aksi" data-id="' + p.id + '">&#129518; Hitung Ulang</button>') : '')
+                + (bolehAksiMenu('pesanan', 'update') ? ('<button type="button" class="btn-hitung-aksi" data-id="' + p.id + '">&#129518; Hitung Ulang</button>') : '')
                 + '</div>';
             html += '<div class="baris-riwayat-item" data-id="' + p.id + '">'
                 + '<div class="atas"><span class="kode">' + escapeHtml(p.kode || ('#' + p.id)) + '</span><span class="waktu">' + escapeHtml(p.tanggalPembayaran || '') + '</span></div>'
@@ -2323,7 +2470,7 @@
                 + '<div class="aksi-pesanan"><button type="button" class="btn-muat-aksi" data-id="' + p.id + '">Muat ke Keranjang</button>'
                 // Gerbang "supervisor-only" -- gerbang SEBENARNYA ditegakkan server-side (sama aksi
                 // batal_pesanan dgn Pesanan Online), ini murni UX.
-                + ((state.isAdminAkun || state.supervisorPedagang) ? ('<button type="button" class="btn-batal-aksi" data-id="' + p.id + '">Hapus</button>') : '') + '</div>'
+                + (bolehAksiMenu('pesanan', 'reject') ? ('<button type="button" class="btn-batal-aksi" data-id="' + p.id + '">Hapus</button>') : '') + '</div>'
                 + '</div>';
         });
         elIsiKeranjangTertahan.innerHTML = html;
@@ -3455,6 +3602,432 @@
     document.getElementById('btnBackLaporanTransaksi').addEventListener('click', function () { kembaliKeKasir(); });
     document.getElementById('btnMuatUlangLaporanTransaksi').addEventListener('click', muatLaporanTransaksi);
 
+    // ---- Riwayat Penjualan (cari transaksi lunas + cetak ulang struk) ----
+    // TERPISAH dari Laporan Transaksi (fokus analitik/rekap: KPI, omzet per kasir/mesin, 3 tab
+    // Order/Sesi/Payment). Sengaja TIDAK menambah aksi server baru -- daftar memakai ULANG aksi
+    // {@code laporan_order_list} (sama dipakai tab "Order" Laporan Transaksi) dgn filter tanggal/nama
+    // pembeli yg SUDAH didukung server (lihat PosApi.daftarOrderDenganSesi) tapi belum dipakai layar
+    // Laporan Transaksi Android; rincian + cetak ulang struk memakai ULANG aksi {@code detail_transaksi}
+    // + {@link bangunDataStrukDariDetail}/printer Bluetooth tersimpan (SAMA persis dgn {@link
+    // cetakStrukPesanan}) -- satu sumber data & satu jalur cetak, konsisten dgn Desktop
+    // (struk.js dipakai Ringkasan MAUPUN Laporan Transaksi lewat aksi yg sama).
+    var elIsiRp = document.getElementById('isiRiwayatPenjualan');
+    var elRpTglMulai = document.getElementById('rpTglMulai');
+    var elRpTglSampai = document.getElementById('rpTglSampai');
+    var elRpCariPembeli = document.getElementById('rpCariPembeli');
+    var stateRp = { page: 1, pageSize: 20, total: 0 };
+
+    function renderTabelRp(data) {
+        elIsiRp.innerHTML = '';
+        data.forEach(function (o) {
+            var el = document.createElement('div');
+            el.className = 'baris-riwayat-item';
+            el.innerHTML = '<div class="atas"><span class="kode-mono">' + escapeHtml(o.nomorNota) + '</span><span class="waktu">' + escapeHtml(formatWaktuLt(o.waktu)) + '</span></div>'
+                + '<div class="baris-2kol"><span>' + escapeHtml(o.pembeli) + ' &middot; ' + escapeHtml(o.kasir) + '</span><span style="font-weight:800;color:var(--primary);">' + formatRupiah(o.totalBiaya) + '</span></div>'
+                + '<div class="baris-2kol"><span class="lencana-status synced">' + escapeHtml(o.metode) + '</span>' + badgeMesinLt(o.namaMesin) + '</div>';
+            var wrapBtn = document.createElement('div');
+            wrapBtn.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
+            var btnDetail = document.createElement('button');
+            btnDetail.type = 'button'; btnDetail.className = 'btn-detail-lt'; btnDetail.textContent = 'Detail';
+            btnDetail.addEventListener('click', function () { bukaDetailPenjualanRp(o.idTransaksi, o.totalDiskon, o.pajak); });
+            var btnCetak = document.createElement('button');
+            btnCetak.type = 'button'; btnCetak.className = 'btn-detail-lt'; btnCetak.textContent = '🖨️ Cetak Struk';
+            btnCetak.addEventListener('click', function () { cetakUlangStrukRp(o.idTransaksi, btnCetak); });
+            wrapBtn.appendChild(btnDetail); wrapBtn.appendChild(btnCetak);
+            if (bolehKelolaProduk()) {
+                var btnBatalkan = document.createElement('button');
+                btnBatalkan.type = 'button'; btnBatalkan.className = 'btn-detail-lt'; btnBatalkan.style.color = 'var(--danger)'; btnBatalkan.textContent = 'Batalkan';
+                btnBatalkan.addEventListener('click', function () { batalkanTransaksiRp(o.idTransaksi); });
+                wrapBtn.appendChild(btnBatalkan);
+            }
+            el.appendChild(wrapBtn);
+            elIsiRp.appendChild(el);
+        });
+        elIsiRp.appendChild(renderPaginasiLt(stateRp, muatRiwayatPenjualan));
+    }
+
+    /**
+     * Tombol "Batalkan" (Supervisor) -- gap-closure padanan JSP e-Kantin (tombol "Batal" di
+     * {@code _riwayat_transaksi_terbaru.jsp}) &amp; Desktop (ringkasan-renderer.js). Android tidak
+     * punya widget "Riwayat Transaksi" terpisah di layar Ringkasan spt Desktop (celah pra-eksisting,
+     * di luar cakupan ini) -- ditaruh di sini (Riwayat Penjualan), daftar per-transaksi terdekat yang
+     * sudah ada. Alasan WAJIB; server (KantinHelper.batalkanTransaksi) memakai util arsip yang SAMA
+     * dgn JSP ({@code PembatalanTransaksiUtil.batalkan}), bukan mekanisme terpisah.
+     */
+    async function batalkanTransaksiRp(id) {
+        var alasan = prompt('Alasan pembatalan transaksi (wajib diisi):', '');
+        if (alasan === null) return;
+        alasan = alasan.trim();
+        if (!alasan) { toast('error', 'Alasan pembatalan wajib diisi.'); return; }
+        if (!confirm('Batalkan transaksi ini? Transaksi akan dihapus permanen dari riwayat penjualan (tetap tercatat di arsip pembatalan beserta alasannya).')) return;
+        try {
+            var r = await AisApi.panggil('batalkan_transaksi', { id: id, alasan: alasan });
+            if (r.status !== '00' && r.status !== 'success') { toast('error', pesanDariHasil(r, 'Gagal membatalkan transaksi.')); return; }
+            toast('success', 'Transaksi berhasil dibatalkan dan tercatat di arsip pembatalan.');
+            muatRiwayatPenjualan();
+        } catch (e) {
+            ErrorAlert.tampilkanDariException(e, 'Batalkan Transaksi');
+        }
+    }
+
+    async function muatRiwayatPenjualan() {
+        elIsiRp.innerHTML = '<div class="layar-kosong">Memuat...</div>';
+        try {
+            var r = await AisApi.panggil('laporan_order_list', {
+                tglMulai: elRpTglMulai.value || '', tglSampai: elRpTglSampai.value || '',
+                cariPembeli: elRpCariPembeli.value.trim(), page: stateRp.page, pageSize: stateRp.pageSize
+            });
+            if (r.status !== 'success') { elIsiRp.innerHTML = '<div class="layar-kosong">' + escapeHtml(pesanDariHasil(r, 'Gagal memuat data.')) + '</div>'; return; }
+            stateRp.total = r.total || 0;
+            var data = r.data || [];
+            if (!data.length) { elIsiRp.innerHTML = '<div class="layar-kosong">Belum ada transaksi pada rentang ini.</div>'; return; }
+            renderTabelRp(data);
+        } catch (e) {
+            elIsiRp.innerHTML = '<div class="layar-kosong">Gagal memuat: ' + escapeHtml(e && e.message ? e.message : e) + '</div>';
+        }
+    }
+    document.getElementById('btnSaringRp').addEventListener('click', function () { stateRp.page = 1; muatRiwayatPenjualan(); });
+    document.getElementById('btnMuatUlangRiwayatPenjualan').addEventListener('click', function () { muatRiwayatPenjualan(); });
+    document.getElementById('btnBackRiwayatPenjualan').addEventListener('click', function () { kembaliKeKasir(); });
+
+    // ---- Modal Detail Penjualan (Riwayat) -- pola sama persis bukaDetailPenjualanLt ----
+    var elOverlayDetailRp = document.getElementById('overlayDetailRp');
+    var elRingkasFiskalRp = document.getElementById('ringkasFiskalRp');
+    var elIsiDetailRp = document.getElementById('isiDetailRp');
+    var elBtnCetakUlangStrukRp = document.getElementById('btnCetakUlangStrukRp');
+    var idTransaksiDetailRpAktif = null;
+
+    async function bukaDetailPenjualanRp(idTransaksi, totalDiskonHeader, pajakHeader) {
+        idTransaksiDetailRpAktif = idTransaksi;
+        elOverlayDetailRp.classList.add('tampil');
+        elRingkasFiskalRp.innerHTML = '';
+        elIsiDetailRp.innerHTML = '<div class="layar-kosong">Memuat...</div>';
+        try {
+            var r = await AisApi.panggil('detail_transaksi', { id: idTransaksi });
+            if (r.status !== 'success') { elIsiDetailRp.innerHTML = '<div class="layar-kosong">' + escapeHtml(pesanDariHasil(r, 'Gagal memuat detail.')) + '</div>'; return; }
+            var item = r.item || [];
+            var baris = item.map(function (it) {
+                var subtotal = (Number(it.harga) || 0) * (Number(it.qty) || 0) - (Number(it.diskon) || 0);
+                return { nama: it.nama, qty: it.qty, harga: it.harga, diskon: it.diskon, subtotal: subtotal };
+            });
+            var totalSubtotal = baris.reduce(function (a, b) { return a + b.subtotal; }, 0);
+            baris.forEach(function (b) { b.pajak = totalSubtotal > 0 ? pajakHeader * (b.subtotal / totalSubtotal) : 0; });
+
+            elRingkasFiskalRp.innerHTML =
+                '<div class="kartu-ringkas"><div class="label">Total Diskon</div><div class="nilai">' + formatRupiah(totalDiskonHeader) + '</div></div>'
+                + '<div class="kartu-ringkas"><div class="label">Pajak</div><div class="nilai">' + formatRupiah(pajakHeader) + '</div></div>'
+                + '<div class="kartu-ringkas" style="grid-column:1/-1;"><div class="label">Total Bayar</div><div class="nilai">' + formatRupiah(r.totalBiaya) + '</div></div>';
+
+            elIsiDetailRp.innerHTML = baris.map(function (b) {
+                return '<div class="lt-item-baris"><div><div class="nama">' + escapeHtml(b.nama) + '</div>'
+                    + '<div class="rincian">' + b.qty + ' x ' + formatRupiah(b.harga) + ' &middot; Diskon ' + formatRupiah(b.diskon) + ' &middot; Pajak ' + formatRupiah(b.pajak) + '</div></div>'
+                    + '<div style="font-weight:800;">' + formatRupiah(b.subtotal) + '</div></div>';
+            }).join('');
+        } catch (e) {
+            elIsiDetailRp.innerHTML = '<div class="layar-kosong">Gagal memuat: ' + escapeHtml(e && e.message ? e.message : e) + '</div>';
+        }
+    }
+    document.getElementById('btnTutupDetailRp').addEventListener('click', function () { elOverlayDetailRp.classList.remove('tampil'); idTransaksiDetailRpAktif = null; });
+    elOverlayDetailRp.addEventListener('click', function (ev) { if (ev.target === elOverlayDetailRp) { elOverlayDetailRp.classList.remove('tampil'); idTransaksiDetailRpAktif = null; } });
+    elBtnCetakUlangStrukRp.addEventListener('click', function () {
+        if (idTransaksiDetailRpAktif != null) cetakUlangStrukRp(idTransaksiDetailRpAktif, elBtnCetakUlangStrukRp);
+    });
+
+    /** Cetak ulang struk dari SATU transaksi historis -- pola sama persis {@link cetakStrukPesanan}, hanya sumber id-nya beda (baris Riwayat Penjualan, bukan objek pesanan lunas). */
+    async function cetakUlangStrukRp(idTransaksi, btn) {
+        muatPrinterTersimpan();
+        if (!printerTersimpan) { toast('error', 'Pilih printer Bluetooth dulu (ikon printer di layar Kasir).'); return; }
+        if (!EscPos.tersedia()) { toast('error', 'Fitur cetak hanya tersedia di aplikasi Android (APK).'); return; }
+        var semulaTeks = btn ? btn.textContent : null;
+        if (btn) { btn.disabled = true; btn.textContent = 'Menyambungkan...'; }
+        try {
+            var r = await AisApi.panggil('detail_transaksi', { id: idTransaksi });
+            if (r.status !== 'success') { toast('error', pesanDariHasil(r, 'Gagal memuat data struk.')); return; }
+            await EscPos.sambungkan(printerTersimpan.address);
+            if (btn) btn.textContent = 'Mencetak...';
+            var bytes = EscPos.bangunStruk(bangunDataStrukDariDetail(r));
+            await EscPos.cetak(bytes);
+            toast('success', 'Struk terkirim ke printer.');
+        } catch (e) {
+            ErrorAlert.tampilkanDariException(e, 'Cetak Ulang Struk Riwayat #' + idTransaksi);
+        } finally {
+            if (btn) { btn.disabled = false; btn.textContent = semulaTeks; }
+        }
+    }
+
+    // ---- Retur Penjualan (catat barang kembali dari pelanggan) ----
+    // TIDAK digerbang Supervisor (beda dari Kulakan) -- tugas rutin kasir sehari-hari, lihat JavaDoc
+    // server KantinHelper.returPenjualanSimpan. Langkah 1 (cari transaksi asal) memakai ULANG aksi
+    // {@code laporan_order_list} (sama dipakai Laporan Transaksi/Riwayat Penjualan); langkah 2 memakai
+    // ULANG {@code detail_transaksi} (sama dipakai cetak ulang struk) -- item-nya kini menyertakan
+    // {@code produkId} (ditambahkan bersamaan dgn fitur ini) supaya bisa langsung dikirim ke {@code
+    // retur_penjualan_simpan} tanpa pencocokan nama produk yang rapuh.
+    var elIsiRetur = document.getElementById('isiReturPenjualan');
+    var elRtKeyword = document.getElementById('rtKeyword');
+    var stateRetur = { page: 1, pageSize: 20, total: 0 };
+
+    var riwayatReturTerakhir = []; // cache halaman terakhir dimuat -- dipakai bukaModalUbahRetur cari data by id tanpa panggil server lagi
+
+    function renderTabelRetur(data) {
+        riwayatReturTerakhir = data;
+        elIsiRetur.innerHTML = '';
+        data.forEach(function (r) {
+            var balik = r.kembalikanKeStok
+                ? '<span class="lencana-status synced">Balik ke Stok</span>'
+                : '<span class="lencana-status pending">Rusak/Tak Kembali</span>';
+            var el = document.createElement('div');
+            el.className = 'baris-riwayat-item';
+            el.innerHTML = '<div class="atas"><span class="kode-mono">' + escapeHtml(r.kodeTransaksiAsal) + '</span><span class="waktu">' + escapeHtml(r.waktu) + '</span></div>'
+                + '<div class="baris-2kol"><span style="font-weight:700;">' + escapeHtml(r.namaProduk) + '</span><span style="font-weight:800;color:var(--danger,#dc2626);">' + formatRupiah(r.totalNilai) + '</span></div>'
+                + '<div class="baris-2kol"><span>' + escapeHtml(r.namaPembeli || '-') + ' &middot; Qty ' + r.qty + '</span>' + balik + '</div>'
+                + '<div style="font-size:11px;color:var(--muted);margin-top:4px;">' + escapeHtml(r.alasan || '-') + '</div>';
+            if (bolehKelolaProduk()) {
+                var wrapAksi = document.createElement('div');
+                wrapAksi.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
+                var btnUbah = document.createElement('button');
+                btnUbah.type = 'button'; btnUbah.className = 'btn-detail-lt'; btnUbah.textContent = 'Ubah';
+                btnUbah.addEventListener('click', function () { bukaModalUbahRetur(r.id); });
+                var btnHapus = document.createElement('button');
+                btnHapus.type = 'button'; btnHapus.className = 'btn-detail-lt'; btnHapus.style.color = 'var(--danger)'; btnHapus.textContent = 'Hapus';
+                btnHapus.addEventListener('click', function () { hapusRetur(r.id); });
+                wrapAksi.appendChild(btnUbah); wrapAksi.appendChild(btnHapus);
+                el.appendChild(wrapAksi);
+            }
+            elIsiRetur.appendChild(el);
+        });
+        elIsiRetur.appendChild(renderPaginasiLt(stateRetur, muatReturPenjualan));
+    }
+
+    async function muatReturPenjualan() {
+        elIsiRetur.innerHTML = '<div class="layar-kosong">Memuat...</div>';
+        try {
+            var r = await AisApi.panggil('retur_penjualan_list', { keyword: elRtKeyword.value.trim(), page: stateRetur.page, page_size: stateRetur.pageSize });
+            if (r.status !== '00' && r.status !== 'success') { elIsiRetur.innerHTML = '<div class="layar-kosong">' + escapeHtml(pesanDariHasil(r, 'Gagal memuat data.')) + '</div>'; return; }
+            stateRetur.total = r.total || 0;
+            var data = r.data || [];
+            if (!data.length) { elIsiRetur.innerHTML = '<div class="layar-kosong">Belum ada retur penjualan tercatat.</div>'; return; }
+            renderTabelRetur(data);
+        } catch (e) {
+            elIsiRetur.innerHTML = '<div class="layar-kosong">Gagal memuat: ' + escapeHtml(e && e.message ? e.message : e) + '</div>';
+        }
+    }
+    document.getElementById('btnSaringRetur').addEventListener('click', function () { stateRetur.page = 1; muatReturPenjualan(); });
+    document.getElementById('btnMuatUlangReturPenjualan').addEventListener('click', function () { muatReturPenjualan(); });
+    document.getElementById('btnBackReturPenjualan').addEventListener('click', function () { kembaliKeKasir(); });
+
+    // -- Modal Langkah 1: Cari Transaksi Asal --
+    var elOverlayCariRetur = document.getElementById('overlayCariTransaksiRetur');
+    var elRtCariNota = document.getElementById('rtCariNota');
+    var elHasilCariRetur = document.getElementById('hasilCariTransaksiRetur');
+
+    document.getElementById('btnReturBaru').addEventListener('click', function () {
+        elRtCariNota.value = ''; elHasilCariRetur.innerHTML = '';
+        elOverlayCariRetur.classList.add('tampil');
+    });
+    document.getElementById('btnTutupCariTransaksiRetur').addEventListener('click', function () { elOverlayCariRetur.classList.remove('tampil'); });
+    elOverlayCariRetur.addEventListener('click', function (ev) { if (ev.target === elOverlayCariRetur) elOverlayCariRetur.classList.remove('tampil'); });
+
+    async function cariTransaksiAsalRetur() {
+        var kw = elRtCariNota.value.trim();
+        if (!kw) { toast('error', 'Ketik nomor nota atau nama pembeli dulu.'); return; }
+        elHasilCariRetur.innerHTML = '<div class="layar-kosong">Mencari...</div>';
+        try {
+            var r = await AisApi.panggil('laporan_order_list', { cariPembeli: kw, page: 1, pageSize: 25 });
+            if (r.status !== 'success') { elHasilCariRetur.innerHTML = ''; toast('error', pesanDariHasil(r, 'Gagal mencari.')); return; }
+            var data = r.data || [];
+            var kwLower = kw.toLowerCase();
+            var hasil = data.filter(function (o) { return (o.nomorNota || '').toLowerCase().indexOf(kwLower) >= 0 || (o.pembeli || '').toLowerCase().indexOf(kwLower) >= 0; });
+            if (!hasil.length) hasil = data;
+            if (!hasil.length) { elHasilCariRetur.innerHTML = '<div class="layar-kosong">Transaksi tidak ditemukan.</div>'; return; }
+            elHasilCariRetur.innerHTML = '';
+            hasil.forEach(function (o) {
+                var btn = document.createElement('button');
+                btn.type = 'button'; btn.className = 'baris-riwayat-item'; btn.style.cssText = 'width:100%;text-align:left;border:1.5px solid var(--border);cursor:pointer;';
+                btn.innerHTML = '<div class="atas"><span class="kode-mono">' + escapeHtml(o.nomorNota) + '</span><span class="waktu">' + escapeHtml(o.waktu) + '</span></div>'
+                    + '<div class="baris-2kol"><span>' + escapeHtml(o.pembeli) + '</span><span style="font-weight:800;color:var(--success);">' + formatRupiah(o.totalBiaya) + '</span></div>';
+                btn.addEventListener('click', function () { pilihTransaksiAsalRetur(o.idTransaksi, o.nomorNota, o.pembeli); });
+                elHasilCariRetur.appendChild(btn);
+            });
+        } catch (e) {
+            elHasilCariRetur.innerHTML = '<div class="layar-kosong">Gagal mencari: ' + escapeHtml(e && e.message ? e.message : e) + '</div>';
+        }
+    }
+    document.getElementById('btnCariNotaRetur').addEventListener('click', cariTransaksiAsalRetur);
+
+    // -- Modal Langkah 2: Pilih Barang --
+    var elOverlayPilihRetur = document.getElementById('overlayPilihBarangRetur');
+    var elIsiPilihRetur = document.getElementById('isiPilihBarangRetur');
+    var elLabelTransaksiAsalRetur = document.getElementById('labelTransaksiAsalRetur');
+    var elRtTotalNilaiRetur = document.getElementById('rtTotalNilaiRetur');
+    var transaksiAsalReturAktif = { id: null, kode: '', pembeli: '' };
+    var itemAsalReturAktif = [];
+    var ALASAN_RETUR_ANDROID = ['Rusak', 'Salah Ukuran/Varian', 'Tidak Sesuai Pesanan', 'Berubah Pikiran', 'Kadaluarsa', 'Lainnya'];
+    var KONDISI_BARANG_ANDROID = ['Baik (Layak Jual Lagi)', 'Rusak (Tidak Layak Jual)'];
+
+    async function pilihTransaksiAsalRetur(idTransaksi, kode, pembeli) {
+        transaksiAsalReturAktif = { id: idTransaksi, kode: kode, pembeli: pembeli };
+        elLabelTransaksiAsalRetur.textContent = kode + ' -- ' + pembeli;
+        elIsiPilihRetur.innerHTML = '<div class="layar-kosong">Memuat item...</div>';
+        elOverlayCariRetur.classList.remove('tampil');
+        elOverlayPilihRetur.classList.add('tampil');
+        try {
+            var r = await AisApi.panggil('detail_transaksi', { id: idTransaksi });
+            if (r.status !== 'success') { elIsiPilihRetur.innerHTML = ''; toast('error', pesanDariHasil(r, 'Gagal memuat item.')); return; }
+            itemAsalReturAktif = r.item || [];
+            var optAlasan = ALASAN_RETUR_ANDROID.map(function (a) { return '<option value="' + a + '">' + a + '</option>'; }).join('');
+            var optKondisi = KONDISI_BARANG_ANDROID.map(function (k) { return '<option value="' + k + '">' + k + '</option>'; }).join('');
+            var html = '';
+            itemAsalReturAktif.forEach(function (it, idx) {
+                html += '<div class="baris-riwayat-item item-retur-android" data-idx="' + idx + '" style="margin-bottom:8px;">'
+                    + '<div class="atas"><label style="display:flex;align-items:center;gap:8px;"><input type="checkbox" class="chk-retur-android"> <b>' + escapeHtml(it.nama) + '</b></label><span class="waktu">Beli: ' + it.qty + '</span></div>'
+                    + '<div style="font-size:11px;color:var(--muted);margin-bottom:6px;">Harga saat beli: ' + formatRupiah(it.harga) + '</div>'
+                    + '<div class="baris-2kol" style="gap:8px;">'
+                    + '<input type="number" class="inp-qty-retur-android" min="0.01" max="' + it.qty + '" step="0.01" value="' + it.qty + '" disabled style="flex:1;padding:6px;border:1px solid var(--border);border-radius:8px;">'
+                    + '<select class="sel-alasan-retur-android" disabled style="flex:1;padding:6px;border:1px solid var(--border);border-radius:8px;">' + optAlasan + '</select>'
+                    + '</div>'
+                    + '<select class="sel-kondisi-retur-android" disabled style="width:100%;margin-top:6px;padding:6px;border:1px solid var(--border);border-radius:8px;">' + optKondisi + '</select>'
+                    + '</div>';
+            });
+            elIsiPilihRetur.innerHTML = html || '<div class="layar-kosong">Transaksi ini tidak punya item.</div>';
+            elIsiPilihRetur.querySelectorAll('.chk-retur-android').forEach(function (chk) {
+                chk.addEventListener('change', function () {
+                    var wrap = this.closest('.item-retur-android');
+                    wrap.querySelectorAll('input, select').forEach(function (el) { if (el !== this) el.disabled = !chk.checked; }, this);
+                    hitungTotalReturAndroid();
+                });
+            });
+            elIsiPilihRetur.querySelectorAll('.inp-qty-retur-android').forEach(function (inp) { inp.addEventListener('input', hitungTotalReturAndroid); });
+            hitungTotalReturAndroid();
+        } catch (e) {
+            elIsiPilihRetur.innerHTML = '<div class="layar-kosong">Gagal memuat: ' + escapeHtml(e && e.message ? e.message : e) + '</div>';
+        }
+    }
+    document.getElementById('btnTutupPilihBarangRetur').addEventListener('click', function () { elOverlayPilihRetur.classList.remove('tampil'); });
+    elOverlayPilihRetur.addEventListener('click', function (ev) { if (ev.target === elOverlayPilihRetur) elOverlayPilihRetur.classList.remove('tampil'); });
+
+    function hitungTotalReturAndroid() {
+        var total = 0;
+        elIsiPilihRetur.querySelectorAll('.item-retur-android').forEach(function (wrap) {
+            var chk = wrap.querySelector('.chk-retur-android');
+            if (chk && chk.checked) {
+                var idx = Number(wrap.getAttribute('data-idx'));
+                var it = itemAsalReturAktif[idx];
+                var qty = parseFloat(wrap.querySelector('.inp-qty-retur-android').value) || 0;
+                total += qty * (Number(it && it.harga) || 0);
+            }
+        });
+        elRtTotalNilaiRetur.textContent = formatRupiah(total);
+    }
+
+    document.getElementById('btnSimpanRetur').addEventListener('click', async function () {
+        var items = [];
+        var adaError = false;
+        elIsiPilihRetur.querySelectorAll('.item-retur-android').forEach(function (wrap) {
+            var chk = wrap.querySelector('.chk-retur-android');
+            if (!chk || !chk.checked) return;
+            var idx = Number(wrap.getAttribute('data-idx'));
+            var it = itemAsalReturAktif[idx];
+            var qty = parseFloat(wrap.querySelector('.inp-qty-retur-android').value) || 0;
+            var qtyBeli = Number(it && it.qty) || 0;
+            if (!it || it.produkId == null || qty <= 0 || qty > qtyBeli) { adaError = true; return; }
+            var kondisi = wrap.querySelector('.sel-kondisi-retur-android').value;
+            items.push({
+                produk_id: it.produkId, qty: qty, harga_satuan: Number(it.harga) || 0,
+                alasan: wrap.querySelector('.sel-alasan-retur-android').value,
+                kondisi_barang: kondisi,
+                kembalikan_ke_stok: kondisi.toLowerCase().indexOf('rusak') === -1
+            });
+        });
+        if (adaError) { toast('error', 'Ada baris tidak valid (qty melebihi jumlah beli, atau produk tak dikenali).'); return; }
+        if (!items.length) { toast('error', 'Pilih minimal satu barang untuk diretur.'); return; }
+
+        var btn = document.getElementById('btnSimpanRetur');
+        var oriTeks = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Menyimpan...';
+        try {
+            var r = await AisApi.panggil('retur_penjualan_simpan', {
+                pembelian_anggota_koperasi_id: transaksiAsalReturAktif.id,
+                kode_transaksi_asal: transaksiAsalReturAktif.kode,
+                nama_pembeli: transaksiAsalReturAktif.pembeli,
+                metode_pengembalian: document.getElementById('rtMetodePengembalian').value,
+                items: items
+            });
+            if (r.status !== '00' && r.status !== 'success') { toast('error', pesanDariHasil(r, 'Gagal menyimpan retur.')); return; }
+            toast('success', 'Retur penjualan berhasil disimpan.');
+            elOverlayPilihRetur.classList.remove('tampil');
+            muatReturPenjualan();
+        } catch (e) {
+            ErrorAlert.tampilkanDariException(e, 'Simpan Retur Penjualan');
+        } finally {
+            btn.disabled = false; btn.textContent = oriTeks;
+        }
+    });
+
+    // -- Ubah/Hapus retur (Supervisor, gerbang bolehKelolaProduk() -- sama dgn Kulakan) --
+    var elOverlayUbahRetur = document.getElementById('overlayUbahRetur');
+    var idReturDiubah = null;
+
+    function bukaModalUbahRetur(id) {
+        var r = null;
+        for (var i = 0; i < riwayatReturTerakhir.length; i++) { if (riwayatReturTerakhir[i].id === id) { r = riwayatReturTerakhir[i]; break; } }
+        if (!r) { toast('error', 'Data retur tidak ditemukan di halaman ini -- muat ulang dulu.'); return; }
+        idReturDiubah = id;
+        document.getElementById('ubahReturId').value = id;
+        document.getElementById('ubahReturProduk').value = r.namaProduk || '';
+        document.getElementById('ubahReturQty').value = r.qty;
+        document.getElementById('ubahReturHarga').value = r.hargaSatuan;
+        document.getElementById('ubahReturAlasan').value = r.alasan || 'Lainnya';
+        document.getElementById('ubahReturKondisi').value = r.kondisiBarang || 'Baik (Layak Jual Lagi)';
+        document.getElementById('ubahReturMetode').value = r.metodePengembalian || 'Tunai';
+        document.getElementById('ubahReturKeterangan').value = r.keterangan || '';
+        elOverlayUbahRetur.classList.add('tampil');
+    }
+    document.getElementById('btnTutupUbahRetur').addEventListener('click', function () { elOverlayUbahRetur.classList.remove('tampil'); idReturDiubah = null; });
+    elOverlayUbahRetur.addEventListener('click', function (ev) { if (ev.target === elOverlayUbahRetur) { elOverlayUbahRetur.classList.remove('tampil'); idReturDiubah = null; } });
+
+    document.getElementById('btnSimpanUbahRetur').addEventListener('click', async function () {
+        if (idReturDiubah == null) return;
+        var qty = parseFloat(document.getElementById('ubahReturQty').value) || 0;
+        if (qty <= 0) { toast('error', 'Qty retur harus lebih dari 0.'); return; }
+        var kondisi = document.getElementById('ubahReturKondisi').value;
+        var btn = document.getElementById('btnSimpanUbahRetur');
+        var oriTeks = btn.textContent;
+        btn.disabled = true; btn.textContent = 'Menyimpan...';
+        try {
+            var r = await AisApi.panggil('retur_penjualan_ubah', {
+                id: idReturDiubah,
+                qty: qty,
+                harga_satuan: parseFloat(document.getElementById('ubahReturHarga').value) || 0,
+                alasan: document.getElementById('ubahReturAlasan').value,
+                kondisi_barang: kondisi,
+                kembalikan_ke_stok: kondisi.toLowerCase().indexOf('rusak') === -1,
+                metode_pengembalian: document.getElementById('ubahReturMetode').value,
+                keterangan: document.getElementById('ubahReturKeterangan').value
+            });
+            if (r.status !== '00' && r.status !== 'success') { toast('error', pesanDariHasil(r, 'Gagal menyimpan perubahan.')); return; }
+            toast('success', 'Retur berhasil diperbarui.');
+            elOverlayUbahRetur.classList.remove('tampil');
+            idReturDiubah = null;
+            muatReturPenjualan();
+        } catch (e) {
+            ErrorAlert.tampilkanDariException(e, 'Ubah Retur Penjualan');
+        } finally {
+            btn.disabled = false; btn.textContent = oriTeks;
+        }
+    });
+
+    async function hapusRetur(id) {
+        if (!confirm('Hapus baris retur ini? Stok akan disesuaikan ulang secara otomatis.')) return;
+        try {
+            var r = await AisApi.panggil('retur_penjualan_hapus', { id: id });
+            if (r.status !== '00' && r.status !== 'success') { toast('error', pesanDariHasil(r, 'Gagal menghapus.')); return; }
+            toast('success', 'Retur berhasil dihapus.');
+            muatReturPenjualan();
+        } catch (e) {
+            ErrorAlert.tampilkanDariException(e, 'Hapus Retur Penjualan');
+        }
+    }
+
     // ---- Customer/Anggota (CRUD, samakan dgn manajemen anggota POS Online) ----
     // Server: anggota_list (keyword/page/page_size -> data.data[]/data.total), anggota_simpan
     // (upsert), jenis_anggota_list (dropdown) -- SEMUA sudah ada & dipakai Desktop, dipanggil di sini
@@ -3836,7 +4409,7 @@
         // Gap-closure "supervisor boleh buat Supervisor lain juga, bukan cuma Kasir" -- checkbox ini
         // SEBELUMNYA hanya utk admin global; sekarang jg tampil utk supervisor toko (server sudah
         // menghormati field ini utk kedua jenis pemanggil, lihat JavaDoc KantinHelper.tambahAkunKasir).
-        elWrapPedagangSupervisor.style.display = (state.isAdminAkun || state.supervisorPedagang) ? 'flex' : 'none';
+        elWrapPedagangSupervisor.style.display = bolehAksiMenu('pedagang', 'supervisor') ? 'flex' : 'none';
         elOverlayFormPedagang.classList.add('tampil');
         elFpUserid.focus();
     }
@@ -3849,7 +4422,7 @@
         elFpNama.value = p.nama || ''; elFpKeterangan.value = p.keterangan || '';
         elFpAktif.checked = p.aktif !== false; elFpSupervisor.checked = !!p.supervisor;
         Object.keys(PETA_AKSES_MENU).forEach(function (k) { PETA_AKSES_MENU[k].checked = p[k] !== false; });
-        elWrapPedagangSupervisor.style.display = (state.isAdminAkun || state.supervisorPedagang) ? 'flex' : 'none';
+        elWrapPedagangSupervisor.style.display = bolehAksiMenu('pedagang', 'supervisor') ? 'flex' : 'none';
         elOverlayFormPedagang.classList.add('tampil');
         elFpNama.focus();
     }
@@ -3865,7 +4438,7 @@
             if (idPedagangDiubah) {
                 var payloadUbah = { id: idPedagangDiubah, nama: nama, keterangan: elFpKeterangan.value.trim(), aktif: elFpAktif.checked };
                 if (elFpPassword.value) payloadUbah.password_baru = elFpPassword.value;
-                if (state.isAdminAkun || state.supervisorPedagang) payloadUbah.supervisor = elFpSupervisor.checked;
+                if (bolehAksiMenu('pedagang', 'supervisor')) payloadUbah.supervisor = elFpSupervisor.checked;
                 Object.keys(PETA_AKSES_MENU).forEach(function (k) { payloadUbah[k] = PETA_AKSES_MENU[k].checked; });
                 r = await AisApi.panggil('pedagang_ubah', payloadUbah);
             } else {
@@ -3874,7 +4447,7 @@
                 if (!userid || !password) { toast('error', 'Userid dan kata sandi wajib diisi.'); return; }
                 if (password.length < 6) { toast('error', 'Kata sandi minimal 6 karakter.'); return; }
                 var payloadTambah = { userid: userid, password: password, nama: nama, keterangan: elFpKeterangan.value.trim() };
-                if (state.isAdminAkun || state.supervisorPedagang) payloadTambah.supervisor = elFpSupervisor.checked;
+                if (bolehAksiMenu('pedagang', 'supervisor')) payloadTambah.supervisor = elFpSupervisor.checked;
                 Object.keys(PETA_AKSES_MENU).forEach(function (k) { payloadTambah[k] = PETA_AKSES_MENU[k].checked; });
                 r = await AisApi.panggil('akun_tambah', payloadTambah);
             }
@@ -5138,13 +5711,66 @@
         return window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins[nama];
     }
 
+    // ==== Format Unggah/Unduh Excel (gap-closure -- lihat JavaDoc PosApi.prosesKonfigurasi soal
+    // kenapa daftar format bersumber dari server walau enable/disable-nya murni lokal) ====
+
+    var elOverlayFormatImporEkspor = document.getElementById('overlayFormatImporEkspor');
+    var elJudulFormatImporEkspor = document.getElementById('judulFormatImporEkspor');
+    var elDaftarFormatImporEkspor = document.getElementById('daftarFormatImporEkspor');
+    var elBtnTutupFormatImporEkspor = document.getElementById('btnTutupFormatImporEkspor');
+    var elBtnBatalFormatImporEkspor = document.getElementById('btnBatalFormatImporEkspor');
+    var elBtnLanjutFormatImporEkspor = document.getElementById('btnLanjutFormatImporEkspor');
+    var KUNCI_FORMAT_NONAKTIF = 'pos_format_import_ekspor_nonaktif';
+
+    function formatDinonaktifkanLokal() {
+        try { return JSON.parse(localStorage.getItem(KUNCI_FORMAT_NONAKTIF) || '[]'); } catch (e) { return []; }
+    }
+    function daftarFormatAktifUntukPicker() {
+        var semua = state.formatImporEkspor || [];
+        var nonaktif = formatDinonaktifkanLokal();
+        var aktifSaja = semua.filter(function (f) { return f.aktif !== false && nonaktif.indexOf(f.id) === -1; });
+        return aktifSaja.length > 0 ? aktifSaja : semua;
+    }
+    function pilihFormatImporEksporModal(judul) {
+        return new Promise(function (resolve) {
+            var daftar = daftarFormatAktifUntukPicker();
+            if (daftar.length === 0) { resolve('accurate'); return; }
+            elJudulFormatImporEkspor.textContent = judul;
+            elDaftarFormatImporEkspor.innerHTML = daftar.map(function (f, i) {
+                return '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1.5px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer;">'
+                    + '<input type="radio" name="pilihanFormatImporEkspor" value="' + escapeHtml(f.id) + '"' + (i === 0 ? ' checked' : '') + '>'
+                    + '<span style="font-weight:700;">' + escapeHtml(f.nama || f.id) + '</span>'
+                    + '</label>';
+            }).join('');
+            elOverlayFormatImporEkspor.classList.add('tampil');
+            var selesai = false;
+            function bersihkan() {
+                elOverlayFormatImporEkspor.classList.remove('tampil');
+                elBtnTutupFormatImporEkspor.removeEventListener('click', batal);
+                elBtnBatalFormatImporEkspor.removeEventListener('click', batal);
+                elBtnLanjutFormatImporEkspor.removeEventListener('click', lanjut);
+            }
+            function batal() { if (selesai) return; selesai = true; bersihkan(); resolve(null); }
+            function lanjut() {
+                if (selesai) return;
+                var dipilih = elDaftarFormatImporEkspor.querySelector('input[name="pilihanFormatImporEkspor"]:checked');
+                selesai = true; bersihkan(); resolve(dipilih ? dipilih.value : daftar[0].id);
+            }
+            elBtnTutupFormatImporEkspor.addEventListener('click', batal);
+            elBtnBatalFormatImporEkspor.addEventListener('click', batal);
+            elBtnLanjutFormatImporEkspor.addEventListener('click', lanjut);
+        });
+    }
+
     elBtnUnduhExcelProduk.addEventListener('click', async function () {
         if (!bolehKelolaProduk()) return;
         var Filesystem = pluginCapacitor('Filesystem');
         if (!Filesystem) { toast('error', 'Fitur unduh berkas tidak tersedia di perangkat ini.'); return; }
+        var formatDipilih = await pilihFormatImporEksporModal('Unduh Excel -- Pilih Format');
+        if (!formatDipilih) return;
         elBtnUnduhExcelProduk.disabled = true;
         try {
-            var r = await AisApi.panggil('produk_ekspor_excel', {});
+            var r = await AisApi.panggil('produk_ekspor_excel', { format: formatDipilih });
             if (r.status !== 'success') { toast('error', pesanDariHasil(r, 'Gagal mengunduh katalog.')); return; }
             var namaFile = r.namaFile || 'katalog-produk.xlsx';
             var direktori = 'DOCUMENTS';
@@ -5165,8 +5791,12 @@
         }
     });
 
-    elBtnUnggahExcelProduk.addEventListener('click', function () {
+    var formatDipilihUnggah = null;
+    elBtnUnggahExcelProduk.addEventListener('click', async function () {
         if (!bolehKelolaProduk()) return;
+        var formatDipilih = await pilihFormatImporEksporModal('Unggah Excel -- Pilih Format');
+        if (!formatDipilih) return;
+        formatDipilihUnggah = formatDipilih;
         elInFileExcelProduk.value = '';
         elInFileExcelProduk.click();
     });
@@ -5198,8 +5828,16 @@
 
     function renderBarisTinjauImpor() {
         var jmlBaru = barisTinjauImpor.filter(function (b) { return b.baru; }).length;
-        elRingkasTinjauImpor.textContent = barisTinjauImpor.length + ' baris (' + jmlBaru + ' produk baru, '
+        var ringkas = barisTinjauImpor.length + ' baris (' + jmlBaru + ' produk baru, '
             + (barisTinjauImpor.length - jmlBaru) + ' diperbarui) -- periksa & sunting bila perlu sebelum dikirim.';
+        if (kolomTinjauImporTidakDitemukan.length) {
+            elRingkasTinjauImpor.innerHTML = '<span style="color:#dc2626;font-weight:800;">'
+                + '&#9888; Kolom ' + kolomTinjauImporTidakDitemukan.join(', ') + ' TIDAK ditemukan di file ini -- '
+                + 'SEMUA baris otomatis dibaca 0 utk kolom itu. Periksa nama header di file Excel Anda, '
+                + 'JANGAN kirim sebelum yakin ini memang benar.</span><br>' + escapeHtml(ringkas);
+        } else {
+            elRingkasTinjauImpor.textContent = ringkas;
+        }
         elIsiTinjauImpor.innerHTML = barisTinjauImpor.map(function (b, idx) {
             var selisih = angkaTinjauImpor(b.stokBaru) - angkaTinjauImpor(b.stokLama);
             return '<div class="ti-baris' + (b.baru ? ' baru' : '') + '" data-idx="' + idx + '">'
@@ -5246,10 +5884,14 @@
         }
     });
 
+    /** Sama persis pola Desktop (produk-renderer.js kolomImporTidakDitemukan) -- lihat JavaDoc di sana. */
+    var kolomTinjauImporTidakDitemukan = [];
+
     function bukaTinjauImpor(data, namaBerkas) {
         barisTinjauImpor = data.baris || [];
         tokoIdTinjauImpor = data.tokoId != null ? data.tokoId : null;
         namaBerkasTinjauImpor = namaBerkas;
+        kolomTinjauImporTidakDitemukan = data.kolomTidakDitemukan || [];
         isiDatalistImpor(elDlKategoriImpor, data.daftarKategori);
         isiDatalistImpor(elDlPemasokImpor, data.daftarPemasok);
         isiDatalistImpor(elDlSatuanImpor, data.daftarSatuan);
@@ -5273,6 +5915,11 @@
             + 'diproses walau sedang offline, akan otomatis terkirim begitu koneksi internet tersambung.'
         );
         if (!lanjut) return;
+        if (kolomTinjauImporTidakDitemukan.length && !confirm(
+            '⚠️ PERINGATAN: kolom ' + kolomTinjauImporTidakDitemukan.join(', ') + ' TIDAK ditemukan di file Excel ini.\n\n'
+            + 'SEMUA baris akan menyimpan 0 utk kolom itu -- ini KEMUNGKINAN BESAR akan MENGHAPUS data stok/harga asli produk yang sudah ada.\n\n'
+            + 'Yakin tetap ingin melanjutkan? Tekan "Cancel" utk membatalkan dan memeriksa ulang file Excel Anda.'
+        )) return;
         var idLokal = 'IMPKTL-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase();
         var waktuProses = new Date().toLocaleString('id-ID');
         var barisKirim = barisTinjauImpor;
@@ -5354,7 +6001,7 @@
                 // Pratinjau MURNI baca (belum ada apa pun yg tersimpan/berubah di server) -- TIDAK
                 // offline-first krn tidak ada data yg berisiko hilang: kalau gagal/offline, pengguna
                 // cukup coba lagi nanti dgn berkas yg sama (berkasnya sendiri masih ada di perangkat).
-                var r = await AisApi.panggil('produk_impor_excel_preview', { file_base64: base64 }, 300000);
+                var r = await AisApi.panggil('produk_impor_excel_preview', { file_base64: base64, format: formatDipilihUnggah }, 300000);
                 if (r.status !== 'success') {
                     toast('error', pesanDariHasil(r, 'Gagal membaca berkas -- pastikan formatnya sesuai template & koneksi internet stabil (pratinjau memerlukan koneksi).'));
                     return;

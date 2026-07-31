@@ -20,7 +20,7 @@
 
     var REPO_GITHUB = 'Zishof/ais-pos-kasir-android';
     var NAMA_APLIKASI = 'AIS POS Kasir Android';
-    var VERSI_APLIKASI = '1.4.0';
+    var VERSI_APLIKASI = '1.18.20';
 
     // ==== Riwayat error lokal -- app ini TIDAK punya layar "Log Error" tersendiri spt Desktop, jadi
     // SETIAP alert yg tampil (lihat tampilkan()) juga dicatat ke localStorage supaya kasir/admin bisa
@@ -29,10 +29,10 @@
     // supaya localStorage tidak membengkak tanpa batas.
     var RIWAYAT_KEY = 'ais_pos_riwayat_error_v1';
     var BATAS_RIWAYAT = 200;
-    function catatKeRiwayat(judul, teknis) {
+    function catatKeRiwayat(judul, teknis, waktu) {
         try {
             var daftar = bacaRiwayat();
-            daftar.push({ waktu: new Date().toISOString(), judul: judul, teknis: teknis });
+            daftar.push({ waktu: waktu, judul: judul, teknis: teknis });
             if (daftar.length > BATAS_RIWAYAT) daftar = daftar.slice(daftar.length - BATAS_RIWAYAT);
             localStorage.setItem(RIWAYAT_KEY, JSON.stringify(daftar));
         } catch (e) { /* localStorage penuh/nonaktif -- riwayat cukup hilang, alert individual tetap tampil normal */ }
@@ -42,6 +42,80 @@
             var raw = localStorage.getItem(RIWAYAT_KEY);
             return raw ? JSON.parse(raw) : [];
         } catch (e) { return []; }
+    }
+
+    /**
+     * Fitur "Sinkronkan Log Error ke Server" -- gap-closure keluhan admin pusat kesulitan memantau
+     * error mesin POS lapangan (Android tak punya layar "Log Error" tersendiri spt Desktop, jadi
+     * riwayat ini murni localStorage perangkat -- hilang bila aplikasi di-uninstall/data dibersihkan,
+     * dan admin tak bisa melihatnya tanpa akses fisik). Dipoll berkala (60 detik, pola sama {@code
+     * offline-queue.js mulaiAutoSync}), mengirim baris yg BELUM {@code disinkron} ke aksi server
+     * {@code error_log_kirim} (SAMA persis dgn Desktop main.js {@code sinkronkanErrorLogPending}) --
+     * ditandai tersinkron HANYA setelah server konfirmasi {@code status="success"}. Pencocokan
+     * waktu+judul dipakai sbg identitas baris (bukan id numerik -- riwayat ini array localStorage
+     * biasa, bukan tabel SQL) krn kombinasi keduanya cukup unik dlm praktik (timestamp presisi ms).
+     */
+    var SEDANG_SINKRON_ERROR = false;
+    async function sinkronkanRiwayatError() {
+        if (SEDANG_SINKRON_ERROR) return;
+        SEDANG_SINKRON_ERROR = true;
+        try {
+            if (!global.AisApi || !global.AisApi.panggil || !global.AisApi.identitasMesinBaca) return;
+            var daftar = bacaRiwayat();
+            var belum = daftar.filter(function (e) { return !e.disinkron; }).slice(0, 100);
+            if (belum.length === 0) return;
+            var m = await global.AisApi.identitasMesinBaca();
+            var namaMesinKirim = m.namaMesin && m.namaMesin.trim() ? m.namaMesin.trim() : ('Mesin-' + m.idMesin.substr(0, 8));
+            var r = await global.AisApi.panggil('error_log_kirim', {
+                platform: 'Android',
+                nama_mesin: namaMesinKirim,
+                baris: belum.map(function (e) {
+                    return { waktu: e.waktu, sumber: 'android:' + (e.judul || '-'), tingkat: 'error', pesan: e.judul, detail: e.teknis, layar: 'Android' };
+                })
+            });
+            if (r && r.status === 'success') {
+                var kunciTerkirim = {};
+                belum.forEach(function (e) { kunciTerkirim[e.waktu + '|' + e.judul] = true; });
+                var terbaru = bacaRiwayat();
+                terbaru.forEach(function (e) { if (kunciTerkirim[e.waktu + '|' + e.judul]) e.disinkron = true; });
+                localStorage.setItem(RIWAYAT_KEY, JSON.stringify(terbaru));
+            }
+        } catch (e) { /* offline/gagal -- diamkan, dicoba lagi siklus berikutnya */ } finally {
+            SEDANG_SINKRON_ERROR = false;
+        }
+    }
+    setInterval(sinkronkanRiwayatError, 60000);
+    setTimeout(sinkronkanRiwayatError, 8000); // jangan langsung saat load (AisApi/token mungkin blm siap) tapi jg jangan tunggu 60 detik pertama
+
+    function tandaiSatuTersinkron(waktu, judul) {
+        try {
+            var daftar = bacaRiwayat();
+            daftar.forEach(function (e) { if (e.waktu === waktu && e.judul === judul) e.disinkron = true; });
+            localStorage.setItem(RIWAYAT_KEY, JSON.stringify(daftar));
+        } catch (e) { /* diam */ }
+    }
+
+    /**
+     * Kirim SATU error SEGERA ke server (gap-closure "begitu terjadi", bukan cuma nunggu batch 60
+     * detik di {@link #sinkronkanRiwayatError}) -- fire-and-forget via {@code AisApi.panggil} (aman
+     * dipakai di sini krn api.js TIDAK memanggil balik tampilkan()/error-alert saat gagal, beda dgn
+     * Desktop main.js panggilPosApi yg memang memanggil catatErrorLogAman -- itu sebabnya Desktop butuh
+     * jalur requestHttp mentah terpisah utk cegah rekursi, di sini tidak perlu). Kegagalan (offline/
+     * server tak terjangkau) cukup diam -- baris SUDAH tersimpan di riwayat lokal (dipanggil SETELAH
+     * catatKeRiwayat) & akan diambil siklus batch 60 detik berikutnya sbg jaring pengaman.
+     */
+    async function kirimSatuErrorSegera(judul, teknis, waktu) {
+        try {
+            if (!global.AisApi || !global.AisApi.panggil || !global.AisApi.identitasMesinBaca) return;
+            var m = await global.AisApi.identitasMesinBaca();
+            var namaMesinKirim = m.namaMesin && m.namaMesin.trim() ? m.namaMesin.trim() : ('Mesin-' + m.idMesin.substr(0, 8));
+            var r = await global.AisApi.panggil('error_log_kirim', {
+                platform: 'Android',
+                nama_mesin: namaMesinKirim,
+                baris: [{ waktu: waktu, sumber: 'android:' + (judul || '-'), tingkat: 'error', pesan: judul, detail: teknis, layar: 'Android' }]
+            });
+            if (r && r.status === 'success') tandaiSatuTersinkron(waktu, judul);
+        } catch (e) { /* diam total -- JANGAN pernah panggil tampilkan() dari sini, batch 60 detik akan coba lagi */ }
     }
 
     // ==== Kamus kategori: dicocokkan dari properti terstruktur error (BUKAN menebak dari teks bebas) ====
@@ -218,7 +292,9 @@
         teksTeknisSaatIni = info.teknis || '(tidak ada detail teknis tambahan)';
         judulTeknisSaatIni = info.judul || 'Error';
         el.teknisPre.textContent = teksTeknisSaatIni;
-        catatKeRiwayat(judulTeknisSaatIni, teksTeknisSaatIni);
+        var waktuErrorIni = new Date().toISOString();
+        catatKeRiwayat(judulTeknisSaatIni, teksTeknisSaatIni, waktuErrorIni);
+        kirimSatuErrorSegera(judulTeknisSaatIni, teksTeknisSaatIni, waktuErrorIni);
 
         el.overlay.className = 'ea-overlay tampil';
     }
