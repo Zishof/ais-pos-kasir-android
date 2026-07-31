@@ -4936,7 +4936,7 @@
 
     // ---- Bersihkan Produk Duplikat (gap-closure, supervisor/admin saja -- gerbang server juga) ----
 
-    var NAMA_JENIS_DUPLIKAT = { kode: 'Kode', barcode: 'Barcode', nama: 'Nama Produk', kode_barcode: 'Kode + Barcode', kode_barcode_nama: 'Kode + Barcode + Nama' };
+    var NAMA_JENIS_DUPLIKAT = { kode: 'Kode', barcode: 'Barcode', nama: 'Nama Produk', kode_barcode: 'Kode + Barcode', kode_barcode_nama: 'Kode + Barcode + Nama', kunci_unik: 'Kunci Unik (Kode+Barcode+Nama, tanpa tanda baca/spasi)' };
     var jenisDuplikatAktif = null;
     var grupDuplikatAktif = [];
 
@@ -5004,11 +5004,13 @@
     var elBtnDuplikatNama = document.getElementById('btnDuplikatNama');
     var elBtnDuplikatKodeBarcode = document.getElementById('btnDuplikatKodeBarcode');
     var elBtnDuplikatKodeBarcodeNama = document.getElementById('btnDuplikatKodeBarcodeNama');
+    var elBtnDuplikatKunciUnik = document.getElementById('btnDuplikatKunciUnik');
     if (elBtnDuplikatKode) elBtnDuplikatKode.addEventListener('click', function () { bukaModalDuplikat('kode'); });
     if (elBtnDuplikatBarcode) elBtnDuplikatBarcode.addEventListener('click', function () { bukaModalDuplikat('barcode'); });
     if (elBtnDuplikatNama) elBtnDuplikatNama.addEventListener('click', function () { bukaModalDuplikat('nama'); });
     if (elBtnDuplikatKodeBarcode) elBtnDuplikatKodeBarcode.addEventListener('click', function () { bukaModalDuplikat('kode_barcode'); });
     if (elBtnDuplikatKodeBarcodeNama) elBtnDuplikatKodeBarcodeNama.addEventListener('click', function () { bukaModalDuplikat('kode_barcode_nama'); });
+    if (elBtnDuplikatKunciUnik) elBtnDuplikatKunciUnik.addEventListener('click', function () { bukaModalDuplikat('kunci_unik'); });
 
     if (elBtnKonfirmasiDuplikatProduk) {
         elBtnKonfirmasiDuplikatProduk.addEventListener('click', async function () {
