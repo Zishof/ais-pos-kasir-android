@@ -17,7 +17,7 @@
     'use strict';
 
     var REPO_GITHUB = 'Zishof/ais-pos-kasir-android';
-    var VERSI_SAAT_INI = '1.18.20';
+    var VERSI_SAAT_INI = '1.18.21';
     var KUNCI_DISMISS = 'ais_pos_update_dismiss_v1';
     var KUNCI_PREF_OTOMATIS = 'ais_pos_update_otomatis';
 

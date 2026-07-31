@@ -5994,13 +5994,50 @@
         if (!berkas) return;
         var reader = new FileReader();
         reader.onload = async function () {
-            var dataUrl = reader.result || '';
-            var base64 = String(dataUrl).split(',')[1] || '';
             elBtnUnggahExcelProduk.disabled = true;
             try {
-                // Pratinjau MURNI baca (belum ada apa pun yg tersimpan/berubah di server) -- TIDAK
-                // offline-first krn tidak ada data yg berisiko hilang: kalau gagal/offline, pengguna
-                // cukup coba lagi nanti dgn berkas yg sama (berkasnya sendiri masih ada di perangkat).
+                if (formatDipilihUnggah === 'accurate') {
+                    // Pratinjau 100% LOKAL (gap-closure -- lihat JavaDoc excel-produk-parser.js): TIDAK
+                    // butuh koneksi sama sekali, TIDAK tergantung kapan server produksi di-redeploy.
+                    // Server baru disentuh saat "Simpan" (elBtnSimpanTinjauImpor, TIDAK berubah).
+                    var hasilParse = window.ExcelProdukParser.parseExcelProdukFormatAccurate(reader.result);
+                    if (!hasilParse.ok) { toast('error', hasilParse.pesan); return; }
+                    var cacheProduk = [];
+                    try { cacheProduk = await ProdukCache.produkCacheSemua(); } catch (eCache) { cacheProduk = []; }
+                    var petaProduk = {};
+                    cacheProduk.forEach(function (p) { if (p && p.kode) petaProduk[String(p.kode).trim().toUpperCase()] = p; });
+                    var kategoriDariCache = {};
+                    cacheProduk.forEach(function (p) { if (p && p.kategoriNama) kategoriDariCache[p.kategoriNama] = true; });
+                    var barisLokal = hasilParse.baris.map(function (b) {
+                        var existing = petaProduk[String(b.kode).trim().toUpperCase()];
+                        return {
+                            no: b.no, kode: b.kode, barcode: b.barcode, nama: b.nama,
+                            kategoriNama: b.kategoriNama, pemasokNama: b.pemasokNama, satuanNama: b.satuanNama,
+                            stokBaru: b.stokBaru, hargaJual: b.hargaJual, hargaBeli: b.hargaBeli,
+                            stokLama: existing ? (existing.stok || 0) : 0,
+                            produkId: existing ? existing.id : null,
+                            baru: !existing
+                        };
+                    });
+                    var setKategoriGabung = {};
+                    hasilParse.kategoriDariFile.forEach(function (n) { setKategoriGabung[n] = true; });
+                    Object.keys(kategoriDariCache).forEach(function (n) { setKategoriGabung[n] = true; });
+                    bukaTinjauImpor({
+                        baris: barisLokal,
+                        tokoId: state.tokoId,
+                        kolomTidakDitemukan: [],
+                        daftarKategori: Object.keys(setKategoriGabung).sort(),
+                        daftarPemasok: hasilParse.pemasokDariFile,
+                        daftarSatuan: hasilParse.satuanDariFile
+                    }, berkas.name);
+                    return;
+                }
+                // Format lain (belum ada) -- jalur server lama sbg cadangan. reader.result di sini adalah
+                // ArrayBuffer (readAsArrayBuffer di bawah, dipakai jalur lokal juga) -- konversi ke base64.
+                var byteArray = new Uint8Array(reader.result);
+                var biner = '';
+                for (var iByte = 0; iByte < byteArray.byteLength; iByte++) biner += String.fromCharCode(byteArray[iByte]);
+                var base64 = btoa(biner);
                 var r = await AisApi.panggil('produk_impor_excel_preview', { file_base64: base64, format: formatDipilihUnggah }, 300000);
                 if (r.status !== 'success') {
                     toast('error', pesanDariHasil(r, 'Gagal membaca berkas -- pastikan formatnya sesuai template & koneksi internet stabil (pratinjau memerlukan koneksi).'));
@@ -6017,7 +6054,7 @@
             }
         };
         reader.onerror = function () { toast('error', 'Gagal membaca berkas terpilih.'); };
-        reader.readAsDataURL(berkas);
+        reader.readAsArrayBuffer(berkas);
     });
 
     elBtnSimpanProduk.addEventListener('click', async function () {
